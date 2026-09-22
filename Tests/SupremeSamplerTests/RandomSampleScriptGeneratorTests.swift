@@ -148,18 +148,24 @@ final class RandomSampleScriptGeneratorTests: XCTestCase {
         let script = RandomSampleScriptGenerator.generate(
             sampleSize: 100, filter: SampleFilter(rating: .atLeast(3)), generatedAt: fixedDate)
 
+        // One merged string literal, not `'base' + ' WHERE ...'` -- see
+        // the doc comment on extentCommandTextLines for why two adjacent
+        // literals joined by `+` is specifically what this interpreter
+        // rejects.
         XCTAssertTrue(
             script.contains(
-                "'SELECT COUNT(*) AS RowCount, MAX(rowid) AS MaxRowID FROM idCatalogItem' +"))
-        XCTAssertTrue(script.contains("' WHERE Rating >= 3';"))
+                "'SELECT COUNT(*) AS RowCount, MAX(rowid) AS MaxRowID FROM idCatalogItem WHERE Rating >= 3';"
+            ))
     }
 
     func test_givenRatingFilter_whenGenerating_thenSampleQueryGetsAndClause() {
         let script = RandomSampleScriptGenerator.generate(
             sampleSize: 100, filter: SampleFilter(rating: .atLeast(3)), generatedAt: fixedDate)
 
-        XCTAssertTrue(script.contains("ACandidates.CommaText + ')' +"))
-        XCTAssertTrue(script.contains("' AND Rating >= 3';"))
+        // `')' + ACandidates.CommaText` still ends with a *variable*
+        // immediately before this literal, so `+` here joins a variable
+        // to a literal (proven to compile), not two literals.
+        XCTAssertTrue(script.contains("ACandidates.CommaText + ') AND Rating >= 3';"))
     }
 
     func test_givenCategoryFilterWithGUIDContainingQuote_whenGenerating_thenBothEscapingLayersApply() {
@@ -221,6 +227,44 @@ final class RandomSampleScriptGeneratorTests: XCTestCase {
                 line.split(separator: "//", maxSplits: 1, omittingEmptySubsequences: false)[0]
             }
             .joined(separator: "\n")
+    }
+
+    // MARK: - Interpreter quirk: no two adjacent string literals joined by `+`
+
+    /// Confirmed by hand in Script Studio (see AGENTS.md): this
+    /// interpreter rejects `'literal1' + 'literal2'` with a syntax
+    /// error, even though `'literal1' + SomeVariable + 'literal2'`
+    /// compiles fine -- the shape every *other* CommandText assignment
+    /// in the verified reference script already uses. A regression test
+    /// on its own, not just an assertion baked into the two "GetsClause"
+    /// tests above, since this is exactly the kind of thing a future
+    /// edit to `extentCommandTextLines`/`sampleCommandTextLines` could
+    /// silently reintroduce without either of those noticing (they only
+    /// check for the *presence* of the merged text, not the *absence*
+    /// of the old, broken shape).
+    func test_givenAnyFilter_whenGenerating_thenNeverJoinsTwoAdjacentStringLiteralsWithPlus() {
+        for filter in [
+            SampleFilter(),
+            SampleFilter(rating: .exactly(5)),
+            SampleFilter(category: CategoryFilter(propGUIDs: ["A", "B", "C"], mode: .all)),
+            SampleFilter(rating: .atMost(2), category: CategoryFilter(propGUIDs: ["A"], mode: .none)),
+        ] {
+            let script = RandomSampleScriptGenerator.generate(sampleSize: 100, filter: filter, generatedAt: fixedDate)
+            let lines = script.split(separator: "\n", omittingEmptySubsequences: false).map {
+                $0.trimmingCharacters(in: .whitespaces)
+            }
+
+            for (previous, current) in zip(lines, lines.dropFirst()) {
+                let previousEndsWithLiteralPlus = previous.hasSuffix("' +")
+                let currentStartsWithLiteral = current.hasPrefix("'")
+                XCTAssertFalse(
+                    previousEndsWithLiteralPlus && currentStartsWithLiteral,
+                    """
+                    found two adjacent string literals joined by '+' for filter \(filter): \
+                    "\(previous)" followed by "\(current)"
+                    """)
+            }
+        }
     }
 
     func test_givenAnyFilter_whenGenerating_thenQuotesAndParensAreBalanced() {

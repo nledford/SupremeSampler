@@ -311,6 +311,34 @@ generator emits:
   comments interleaved between them the way a normal Delphi file would;
   the working pattern is a separate `const` keyword before each constant,
   with its explanatory comment above the `const` line.
+- **Script Studio's reported "Source position: L,C" for a syntax error
+  is not reliable** — confirmed twice now (once during the earlier
+  `Random`/`try...except` debugging, and again on 2026-09-22 for the
+  literal-concatenation quirk below), by finding the actual defect via
+  bisection against a known-good file and noting the reported line
+  didn't match. When bisecting a compile error, don't trust the
+  reported position as ground truth; diff against the last-known-good
+  script and change one thing at a time instead. One reproducible
+  pattern observed 2026-09-22: the reported line landed exactly 23
+  lines *before* the real defect in two different test files (43 vs.
+  the true 66; 40 vs. the true 63) — consistent enough to be a useful
+  hint if it recurs, but not confirmed as a general rule.
+- **Two adjacent string literals joined by `+` are rejected** (`'a' +
+  'b'`) — a "Syntax error" with the misleadingly-located reported
+  position described above, even though the *identical*-looking `'a' +
+  SomeVariable + 'b'` (a literal next to a runtime variable) compiles
+  fine, and even the single-line form `x := 'a' + 'b';` fails the same
+  way, so it's not about line breaks. Confirmed by bisection against
+  the real catalog on 2026-09-22 — see
+  `RandomSampleScriptGenerator.extentCommandTextLines`/
+  `sampleCommandTextLines` for the fix (always build the full SQL text
+  as one Swift string, then wrap it in a *single* Pascal string
+  literal, never concatenate two literals at the Pascal level) and
+  `RandomSampleScriptGeneratorTests
+  .test_givenAnyFilter_whenGenerating_thenNeverJoinsTwoAdjacentStringLiteralsWithPlus`
+  for the regression guard. If you ever need to build a `CommandText`
+  from more than one piece of literal text again, concatenate them in
+  Swift before calling `PascalStringLiteral.escape`, not after.
 - `TidElement.Data` (`TObject` in the public API, concrete class
   undocumented) can be assigned to a `Variant` and late-bound
   (`.Clear`, `.Items.SomeProp`) successfully — confirmed working, not a

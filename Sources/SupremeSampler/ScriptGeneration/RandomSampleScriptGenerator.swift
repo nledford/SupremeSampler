@@ -269,35 +269,35 @@ enum RandomSampleScriptGenerator {
 
     // MARK: - The two dynamic CommandText assignments
 
+    // Both methods below build their SQL text as one Swift string, then
+    // escape it into a *single* Pascal string literal -- deliberately
+    // never two adjacent literals joined by `+` (`'a' + 'b'`). Confirmed
+    // by hand in Script Studio (see AGENTS.md) that this interpreter
+    // rejects exactly that shape with a misleadingly-located "Syntax
+    // error", even though the *identical* concatenation compiles fine
+    // when one side is a variable instead of a literal (as
+    // `ACandidates.CommaText` already is below) -- so a literal is only
+    // ever `+`-joined with a variable here, never with another literal.
     private static func extentCommandTextLines(predicate: String?) -> [String] {
-        let baseSQL = PascalStringLiteral.escape(
-            "SELECT COUNT(*) AS RowCount, MAX(rowid) AS MaxRowID FROM idCatalogItem")
-        guard let predicate else {
-            return [
-                "    AExtentSet.CommandText :=",
-                "      \(baseSQL);",
-            ]
+        var sql = "SELECT COUNT(*) AS RowCount, MAX(rowid) AS MaxRowID FROM idCatalogItem"
+        if let predicate {
+            sql += " WHERE " + predicate
         }
-        let whereLiteral = PascalStringLiteral.escape(" WHERE " + predicate)
         return [
             "    AExtentSet.CommandText :=",
-            "      \(baseSQL) +",
-            "      \(whereLiteral);",
+            "      \(PascalStringLiteral.escape(sql));",
         ]
     }
 
     private static func sampleCommandTextLines(predicate: String?) -> [String] {
-        let base = [
+        var trailer = ")"
+        if let predicate {
+            trailer += " AND " + predicate
+        }
+        return [
             "          ASampleSet.CommandText :=",
             "            'SELECT GUID FROM idCatalogItem WHERE rowid IN (' +",
-        ]
-        guard let predicate else {
-            return base + ["            ACandidates.CommaText + ')';"]
-        }
-        let andLiteral = PascalStringLiteral.escape(" AND " + predicate)
-        return base + [
-            "            ACandidates.CommaText + ')' +",
-            "            \(andLiteral);",
+            "            ACandidates.CommaText + \(PascalStringLiteral.escape(trailer));",
         ]
     }
 }
