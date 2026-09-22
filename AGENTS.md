@@ -65,6 +65,41 @@ but not fluent in Swift/SwiftUI. Always write code with that in mind:
   `.swift` file top to bottom and follow it using their existing
   background, without stopping to look up unfamiliar syntax elsewhere.
 
+## Script generation
+
+`Sources/SupremeSampler/ScriptGeneration/` turns a `SampleFilter` into
+`.psc` source text (`RandomSampleScriptGenerator`), pure and file-I/O-free
+like `PhotoSupremeCatalog`'s query layer. Two things worth knowing before
+touching it:
+
+- **Two independent predicate renderers exist on purpose, not by
+  accident**: `SQLPredicateText` (plain SQL text, for the generated
+  script) and `PhotoSupremeCatalog`'s private predicate builder (GRDB-
+  parameterized, for live queries) implement the same rating/category
+  rules twice, deliberately not unified — see `SQLPredicateText`'s doc
+  comment for why. **If you change what a `RatingFilter` or
+  `CategoryFilter` case means, change it in both places**, and keep
+  `PredicateConsistencyTests` passing — it runs both implementations
+  against the same fixture and asserts they agree on every row. Swift's
+  exhaustive `switch` catches a *new* unhandled case automatically; only
+  this test catches a *semantic* change to an existing case made in one
+  file and not the other.
+- **The generator's boilerplate is hand-transcribed from the real,
+  committed, verified-compiling-and-running
+  `~/Projects/pascal/photo supreme/RandomCatalogSample.psc`**,
+  not read from that file at runtime (it's a different repo; this app
+  shouldn't depend on it being present on disk to build). This already
+  caused one real bug during development — the generator emitted `end.`
+  instead of the real script's `end;` on the final statement, and the
+  first version of the regression test meant to catch exactly that
+  enshrined the wrong value instead of catching it, because it was
+  hand-copied from the generator's own output rather than the source of
+  truth. `RandomSampleScriptGeneratorTests` now includes a test that
+  reads the real file directly and compares line-for-line (skipped, not
+  failed, if that file isn't present on the machine running the test) —
+  keep that test whenever the boilerplate changes, don't just update
+  `invariantLines` by hand.
+
 ## Commands
 
 Run `just` for the full list. Common ones:
