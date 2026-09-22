@@ -124,6 +124,30 @@ a deliberate choice by the repo owner ("I do not use the built-in
 categories prepended with `{`"), not an oversight; don't "fix" this to
 include them without asking first.
 
+## Switching catalogs (File > Open Catalog…)
+
+Cmd+O / File menu > "Open Catalog…" (`SupremeSamplerApp.commands`) lets
+the user switch to a different catalog file at any time, not just on
+first launch. It exists because the auto-open-on-launch path
+(`RecentCatalogStore`) has no built-in recovery if the remembered path
+is wrong for any reason (e.g. it was manually written, or a future bug
+persists the wrong path) — before this command, fixing that meant
+editing `UserDefaults` from the command line.
+
+The menu command lives in `SupremeSamplerApp`, outside any window's
+view hierarchy, so it can't reach `ContentView`'s `@State` directly. It
+posts `Notification.Name.openCatalogRequested`
+(`ContentView.swift`), which `ContentView` observes via `.onReceive` to
+present its own `.fileImporter`. This is deliberately a second,
+separate `.fileImporter`/handler pair
+(`ContentView.handleCatalogFileImporterResult`) from
+`CatalogPickerView`'s — the two exist for different reasons (first-open
+vs. switch-catalog) and are small enough that sharing them would cost
+more than it saves. Both funnel into the same
+`SampleBuilderModel.openCatalog(at:)`, which already handles being
+called while a different catalog is open (it just replaces `catalog`/
+`propTree`/etc. on success, same as a first open).
+
 ## Testing and coverage
 
 `just test` runs the full suite (`xcodebuild test`); coverage is

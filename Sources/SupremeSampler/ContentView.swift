@@ -15,6 +15,14 @@ struct ContentView: View {
     // to any of its properties trigger re-renders of whatever reads them.
     @State private var model = SampleBuilderModel()
 
+    // Backs the menu-bar "Open Catalog…" command (see
+    // `SupremeSamplerApp.commands`) -- unlike `CatalogPickerView`'s own
+    // `isPickingFile`, this one has to live here rather than down in a
+    // child view, since the menu command needs to be able to trigger it
+    // regardless of which child view (`CatalogPickerView` or the
+    // `NavigationSplitView`) is currently showing.
+    @State private var isPickingCatalog = false
+
     /// Plain default init for real use (`ContentView()` in
     /// `SupremeSamplerApp`) -- relies on `model`'s own
     /// `= SampleBuilderModel()` default above. Declared explicitly only
@@ -70,7 +78,45 @@ struct ContentView: View {
         .task {
             model.attemptAutoOpenRecentCatalog()
         }
+        // Listens for the menu-bar command rather than being driven
+        // directly by it, since `SupremeSamplerApp.commands` lives
+        // outside this view's own state and SwiftUI's `Commands` scene
+        // builder has no direct way to flip a `@State` var owned by a
+        // window's content view. `NotificationCenter` is the standard
+        // SwiftUI escape hatch for that -- the nearest analogue in a web
+        // app would be a global event bus/`EventEmitter` instead of
+        // passing a callback down through props.
+        .onReceive(NotificationCenter.default.publisher(for: .openCatalogRequested)) { _ in
+            isPickingCatalog = true
+        }
+        .fileImporter(isPresented: $isPickingCatalog, allowedContentTypes: [.item]) { result in
+            handleCatalogFileImporterResult(result)
+        }
     }
+
+    /// Pulled out of the `.fileImporter` closure for the same reason as
+    /// `CatalogPickerView.handleFileImporterResult`: directly unit-
+    /// testable without driving the system Open panel. Not shared with
+    /// that method via a common helper -- the two call sites are each a
+    /// few lines, and the two views have different reasons to exist
+    /// (first-open vs. switch-catalog), so a shared abstraction here
+    /// would cost more than it saves.
+    func handleCatalogFileImporterResult(_ result: Result<URL, Error>) {
+        switch result {
+        case .success(let url):
+            _ = url.startAccessingSecurityScopedResource()
+            model.openCatalog(at: url.path)
+        case .failure(let error):
+            model.reportPickerFailure(error)
+        }
+    }
+}
+
+extension Notification.Name {
+    /// Posted by the "Open Catalog…" menu-bar command
+    /// (`SupremeSamplerApp.commands`); observed by `ContentView` to
+    /// present the file picker.
+    static let openCatalogRequested = Notification.Name("com.nateledford.SupremeSampler.openCatalogRequested")
 }
 
 // `#Preview` is a Swift macro (compile-time code generation, vaguely like

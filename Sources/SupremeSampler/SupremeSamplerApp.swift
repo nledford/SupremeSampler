@@ -29,5 +29,25 @@ struct SupremeSamplerApp: App {
         WindowGroup {
             ContentView()
         }
+        // `.commands { ... }` extends the app's menu bar -- the SwiftUI
+        // analogue of a web app registering global keyboard shortcuts,
+        // except these show up as real, discoverable File-menu items
+        // too, not just invisible key handlers. `CommandGroup(after:)`
+        // inserts alongside a named existing group (here, right after
+        // the default "New Window" item) rather than replacing it.
+        //
+        // This can't call into `ContentView`'s state directly -- a
+        // `Commands` builder lives outside any specific window's view
+        // hierarchy, so the button posts a notification instead, which
+        // `ContentView` listens for. See `Notification.Name
+        // .openCatalogRequested` in ContentView.swift.
+        .commands {
+            CommandGroup(after: .newItem) {
+                Button("Open Catalog…") {
+                    NotificationCenter.default.post(name: .openCatalogRequested, object: nil)
+                }
+                .keyboardShortcut("o", modifiers: .command)
+            }
+        }
     }
 }

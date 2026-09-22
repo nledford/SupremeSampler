@@ -42,6 +42,42 @@ final class ViewRenderingTests: XCTestCase {
         _ = view.body
     }
 
+    func test_givenSuccessfulPick_whenHandlingCatalogFileImporterResult_thenModelStartsOpening() {
+        // Exercises the menu-bar "Open Catalog…" command's handler
+        // directly, the same technique CatalogPickerView's equivalent
+        // test below uses -- no way to drive the system Open panel or
+        // the app's real menu bar from XCTest.
+        let model = SampleBuilderModel()
+        let view = ContentView(model: model)
+
+        view.handleCatalogFileImporterResult(.success(URL(fileURLWithPath: "/nonexistent/catalog.cat.db")))
+
+        XCTAssertTrue(model.isOpeningCatalog)
+    }
+
+    func test_givenFailedPick_whenHandlingCatalogFileImporterResult_thenModelReportsError() {
+        let model = SampleBuilderModel()
+        let view = ContentView(model: model)
+
+        view.handleCatalogFileImporterResult(.failure(NSError(domain: "test", code: 1)))
+
+        XCTAssertNotNil(model.errorMessage)
+    }
+
+    func test_givenCatalogAlreadyOpen_whenHandlingCatalogFileImporterResultAgain_thenSwitchesToNewCatalog() {
+        // The whole point of the menu command: it has to work from the
+        // already-has-a-catalog-open state too, not just the initial
+        // picker screen -- this is what distinguishes it from
+        // CatalogPickerView's own (first-open-only) handler.
+        let model = SampleBuilderModel()
+        model.injectCatalogForTesting(FakeCatalogForViewTests(), propTree: [CatalogPropNode(guid: "g1", name: "Old", children: [])])
+        let view = ContentView(model: model)
+
+        view.handleCatalogFileImporterResult(.success(URL(fileURLWithPath: "/nonexistent/other-catalog.cat.db")))
+
+        XCTAssertTrue(model.isOpeningCatalog)
+    }
+
     // MARK: - CatalogPickerView
 
     func test_givenDefaultState_whenBuildingCatalogPickerView_thenBodyDoesNotCrash() {
