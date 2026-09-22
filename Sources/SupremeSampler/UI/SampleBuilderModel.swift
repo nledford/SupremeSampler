@@ -21,13 +21,13 @@ import Observation
 /// written locking, similar in spirit to how a single-threaded JS event
 /// loop makes shared mutable state safe without a mutex.
 ///
-/// Catalog access (`openCatalog`, `refreshMatchingCount`) is called
-/// directly, synchronously, from the main actor rather than dispatched
-/// to a background queue/Task -- a deliberate simplification given the
-/// benchmarks in AGENTS.md (sub-second even against the real multi-million-row
-/// catalog): if a catalog operation ever becomes slow enough to visibly
-/// freeze the UI, that's the signal to introduce real background
-/// dispatch, not something to build preemptively now.
+/// Catalog access (`openCatalog`, `refreshMatchingCount`) runs
+/// asynchronously via GRDB's own `async` reads (see
+/// `PhotoSupremeCatalog`), off the main actor while the query itself
+/// executes, resuming here to update state. This used to be synchronous
+/// -- a deliberate simplification given how fast most queries benchmark
+/// (see AGENTS.md) -- until a real category matching ~700k photos froze
+/// the UI, which is exactly the signal that comment said to watch for.
 @Observable
 @MainActor
 final class SampleBuilderModel {
@@ -35,8 +35,19 @@ final class SampleBuilderModel {
     private(set) var availableProps: [CatalogProp] = []
     private(set) var matchingCount: Int?
     private(set) var errorMessage: String?
+    private(set) var isOpeningCatalog = false
+    private(set) var isCountingMatches = false
 
-    private var catalog: PhotoSupremeCatalog?
+    private var catalog: (any SampleBuilderCatalog)?
+
+    // Tracks the in-flight match-count query so a newer request can
+    // cancel a still-running older one -- otherwise a slow query for a
+    // filter you've already changed away from could finish *after* a
+    // faster, more current one and overwrite its result with stale
+    // data. The same problem an `AbortController` solves for a
+    // superseded `fetch()` in JS, or that dropping a previous
+    // `JoinHandle` solves in Rust.
+    private var matchCountTask: Task<Void, Never>?
 
     var sampleSize: Int = 10_000
 
@@ -77,20 +88,43 @@ final class SampleBuilderModel {
         RandomSampleScriptGenerator.generate(sampleSize: sampleSize, filter: currentFilter)
     }
 
+    /// Opens `path` and loads its category list, then kicks off a match
+    /// count for the current filter. Not `async` itself -- called from
+    /// a synchronous SwiftUI `.fileImporter` completion -- but launches
+    /// a `Task` internally so the caller doesn't block while it runs;
+    /// `isOpeningCatalog` is what a view shows a spinner for meanwhile.
+    ///
+    /// Unlike `refreshMatchingCount`, this doesn't track its `Task` or
+    /// guard against a second overlapping call -- currently safe only
+    /// because the one real call site, `CatalogPickerView`, replaces its
+    /// "Open Catalog…" button with the spinner while `isOpeningCatalog`
+    /// is true and is itself unmounted (by `ContentView`) the moment a
+    /// catalog opens successfully, so nothing can invoke this a second
+    /// time while a first is still in flight. The `guard` below is
+    /// defense in depth against that invariant breaking later (e.g. a
+    /// future "switch catalog" feature that can call this while one is
+    /// already open) -- without it, two overlapping opens could
+    /// interleave in the same way `refreshMatchingCount` used to be able
+    /// to before this refactor.
     func openCatalog(at path: String) {
+        guard !isOpeningCatalog else { return }
         errorMessage = nil
-        do {
-            let opened = try PhotoSupremeCatalog(path: path)
-            catalog = opened
-            catalogPath = path
-            availableProps = try opened.listProps()
-            refreshMatchingCount()
-        } catch {
-            catalog = nil
-            catalogPath = nil
-            availableProps = []
-            matchingCount = nil
-            errorMessage = "Couldn't open catalog: \(error.localizedDescription)"
+        isOpeningCatalog = true
+        Task {
+            defer { isOpeningCatalog = false }
+            do {
+                let opened = try PhotoSupremeCatalog(path: path)
+                availableProps = try await opened.listProps()
+                catalog = opened
+                catalogPath = path
+                refreshMatchingCount()
+            } catch {
+                catalog = nil
+                catalogPath = nil
+                availableProps = []
+                matchingCount = nil
+                errorMessage = "Couldn't open catalog: \(error.localizedDescription)"
+            }
         }
     }
 
@@ -101,19 +135,71 @@ final class SampleBuilderModel {
         errorMessage = "Couldn't open file picker: \(error.localizedDescription)"
     }
 
-    /// Re-runs the pre-flight match count for `currentFilter`. Called
-    /// after opening a catalog, and again by the view whenever
-    /// `currentFilter` changes (via `.onChange`) -- so "342 photos
-    /// match" stays live as rules are edited, the same pre-flight
-    /// validation idea discussed before any script generator existed.
+    /// Re-runs the pre-flight match count for `currentFilter` in the
+    /// background. Called after opening a catalog, and again by the
+    /// view whenever `currentFilter` changes (via `.onChange`) -- so
+    /// "342 photos match" stays live as rules are edited, the same
+    /// pre-flight validation idea discussed before any script generator
+    /// existed.
     func refreshMatchingCount() {
-        guard let catalog else { return }
-        do {
-            matchingCount = try catalog.matchingItemCount(for: currentFilter)
-            errorMessage = nil
-        } catch {
+        matchCountTask?.cancel()
+
+        guard let catalog else {
+            isCountingMatches = false
             matchingCount = nil
-            errorMessage = "Couldn't count matching photos: \(error.localizedDescription)"
+            return
         }
+
+        let filter = currentFilter
+        isCountingMatches = true
+
+        matchCountTask = Task {
+            do {
+                let count = try await catalog.matchingItemCount(for: filter)
+                // Only a task that actually finishes uninterrupted gets
+                // to update state -- deliberately NOT a `defer`, and
+                // deliberately checked again here rather than trusting
+                // the `matchCountTask?.cancel()` above alone: a
+                // superseded task might already be past this `await`
+                // and about to write its (stale) result by the time the
+                // next `refreshMatchingCount()` call cancels it, so
+                // `isCancelled` is what actually gates whether it's
+                // still allowed to touch `matchingCount`/
+                // `isCountingMatches`. A `defer`-based reset here would
+                // have a bug: a cancelled task's cleanup could clear
+                // `isCountingMatches` right after a *newer* task has
+                // already set it back to true, ending the spinner while
+                // the newer query is still genuinely running.
+                guard !Task.isCancelled else { return }
+                matchingCount = count
+                errorMessage = nil
+                isCountingMatches = false
+            } catch {
+                guard !Task.isCancelled else { return }
+                matchingCount = nil
+                errorMessage = "Couldn't count matching photos: \(error.localizedDescription)"
+                isCountingMatches = false
+            }
+        }
+    }
+
+    /// Test seam: substitutes a catalog conforming to
+    /// `SampleBuilderCatalog` without going through the real file-
+    /// opening path in `openCatalog`. Plain `internal` (Swift's
+    /// unmarked default access level, visible module-wide -- closer to
+    /// Rust's `pub(crate)` than to `private`) rather than gated behind
+    /// `#if DEBUG`: `@testable import SupremeSampler` already only
+    /// works from this module's own test target, so there's no
+    /// production-visibility risk to guard against further.
+    func injectCatalogForTesting(_ catalog: any SampleBuilderCatalog) {
+        self.catalog = catalog
+        self.catalogPath = "test"
+    }
+
+    /// Test seam: awaits whatever `refreshMatchingCount()` call is
+    /// currently in flight, so a test can wait for it to actually finish
+    /// instead of guessing how long to sleep.
+    func waitForPendingMatchCountForTesting() async {
+        await matchCountTask?.value
     }
 }

@@ -85,7 +85,14 @@ struct SampleBuilderView: View {
 
     @ViewBuilder
     private var matchCountRow: some View {
-        if let count = model.matchingCount {
+        if model.isCountingMatches {
+            HStack(spacing: 6) {
+                ProgressView()
+                    .controlSize(.small)
+                Text("Counting matches…")
+                    .foregroundStyle(.secondary)
+            }
+        } else if let count = model.matchingCount {
             Label("\(count) photo\(count == 1 ? "" : "s") match", systemImage: "checkmark.circle")
         } else {
             Text("—")

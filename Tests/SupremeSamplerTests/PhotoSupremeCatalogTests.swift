@@ -113,54 +113,53 @@ final class PhotoSupremeCatalogTests: XCTestCase {
         }
     }
 
-    func test_givenCatalogWithFiveRows_whenFetchingExtent_thenReturnsCountAndMaxRowID() throws {
+    func test_givenCatalogWithFiveRows_whenFetchingExtent_thenReturnsCountAndMaxRowID() async throws {
         try makeFixture((1...5).map { FixtureItem(guid: "item-\($0)") })
         let catalog = try PhotoSupremeCatalog(path: fixturePath)
 
-        let extent = try catalog.catalogItemExtent()
+        let extent = try await catalog.catalogItemExtent()
 
         XCTAssertEqual(extent, CatalogExtent(rowCount: 5, maxRowID: 5))
     }
 
-    func test_givenEmptyCatalog_whenFetchingExtent_thenMaxRowIDIsZeroNotNil() throws {
+    func test_givenEmptyCatalog_whenFetchingExtent_thenMaxRowIDIsZeroNotNil() async throws {
         // MAX(rowid) over zero rows is SQL NULL, not 0 -- worth its own
         // test since a naive `row["maxRowID"]` read into a non-optional
         // Int would crash on that NULL instead of producing a sane value.
         try makeFixture([])
         let catalog = try PhotoSupremeCatalog(path: fixturePath)
 
-        let extent = try catalog.catalogItemExtent()
+        let extent = try await catalog.catalogItemExtent()
 
         XCTAssertEqual(extent, CatalogExtent(rowCount: 0, maxRowID: 0))
     }
 
     // MARK: - matchingItemCount: no filter
 
-    func test_givenNoFilter_whenCountingMatches_thenReturnsTotalRowCount() throws {
+    func test_givenNoFilter_whenCountingMatches_thenReturnsTotalRowCount() async throws {
         try makeFixture((1...4).map { FixtureItem(guid: "item-\($0)") })
         let catalog = try PhotoSupremeCatalog(path: fixturePath)
 
-        let count = try catalog.matchingItemCount(for: SampleFilter())
+        let count = try await catalog.matchingItemCount(for: SampleFilter())
 
         XCTAssertEqual(count, 4)
     }
 
     // MARK: - matchingItemCount: rating
 
-    func test_givenRatingFilters_whenCountingMatches_thenComparesCorrectly() throws {
+    func test_givenRatingFilters_whenCountingMatches_thenComparesCorrectly() async throws {
         // One item per rating value 0...5.
         try makeFixture((0...5).map { FixtureItem(guid: "item-\($0)", rating: $0) })
         let catalog = try PhotoSupremeCatalog(path: fixturePath)
 
-        XCTAssertEqual(
-            try catalog.matchingItemCount(for: SampleFilter(rating: .exactly(3))), 1,
-            "exactly(3) should match only the rating-3 item")
-        XCTAssertEqual(
-            try catalog.matchingItemCount(for: SampleFilter(rating: .atLeast(3))), 3,
-            "atLeast(3) should match ratings 3, 4, 5")
-        XCTAssertEqual(
-            try catalog.matchingItemCount(for: SampleFilter(rating: .atMost(2))), 3,
-            "atMost(2) should match ratings 0, 1, 2")
+        let exactlyThree = try await catalog.matchingItemCount(for: SampleFilter(rating: .exactly(3)))
+        XCTAssertEqual(exactlyThree, 1, "exactly(3) should match only the rating-3 item")
+
+        let atLeastThree = try await catalog.matchingItemCount(for: SampleFilter(rating: .atLeast(3)))
+        XCTAssertEqual(atLeastThree, 3, "atLeast(3) should match ratings 3, 4, 5")
+
+        let atMostTwo = try await catalog.matchingItemCount(for: SampleFilter(rating: .atMost(2)))
+        XCTAssertEqual(atMostTwo, 3, "atMost(2) should match ratings 0, 1, 2")
     }
 
     // MARK: - matchingItemCount: category
@@ -179,33 +178,33 @@ final class PhotoSupremeCatalogTests: XCTestCase {
         ])
     }
 
-    func test_givenCategoryModeAny_whenCountingMatches_thenMatchesItemsWithAtLeastOneProp() throws {
+    func test_givenCategoryModeAny_whenCountingMatches_thenMatchesItemsWithAtLeastOneProp() async throws {
         try makeCategoryFixture()
         let catalog = try PhotoSupremeCatalog(path: fixturePath)
 
-        let count = try catalog.matchingItemCount(
+        let count = try await catalog.matchingItemCount(
             for: SampleFilter(category: CategoryFilter(propGUIDs: ["catA", "catC"], mode: .any)))
 
         // a-only, a-and-b, a-b-and-c all carry catA; b-only and none do not.
         XCTAssertEqual(count, 3)
     }
 
-    func test_givenCategoryModeAll_whenCountingMatches_thenMatchesOnlyItemsWithEveryProp() throws {
+    func test_givenCategoryModeAll_whenCountingMatches_thenMatchesOnlyItemsWithEveryProp() async throws {
         try makeCategoryFixture()
         let catalog = try PhotoSupremeCatalog(path: fixturePath)
 
-        let count = try catalog.matchingItemCount(
+        let count = try await catalog.matchingItemCount(
             for: SampleFilter(category: CategoryFilter(propGUIDs: ["catA", "catB"], mode: .all)))
 
         // Only a-and-b and a-b-and-c carry both catA and catB.
         XCTAssertEqual(count, 2)
     }
 
-    func test_givenCategoryModeNone_whenCountingMatches_thenMatchesOnlyItemsWithoutAnyProp() throws {
+    func test_givenCategoryModeNone_whenCountingMatches_thenMatchesOnlyItemsWithoutAnyProp() async throws {
         try makeCategoryFixture()
         let catalog = try PhotoSupremeCatalog(path: fixturePath)
 
-        let count = try catalog.matchingItemCount(
+        let count = try await catalog.matchingItemCount(
             for: SampleFilter(category: CategoryFilter(propGUIDs: ["catA"], mode: .none)))
 
         // Only "none" and "b-only" lack catA.
@@ -214,31 +213,31 @@ final class PhotoSupremeCatalogTests: XCTestCase {
 
     // MARK: - matchingItemCount: category, empty propGUIDs (vacuous cases)
 
-    func test_givenEmptyPropGUIDsModeAny_whenCountingMatches_thenMatchesNothing() throws {
+    func test_givenEmptyPropGUIDsModeAny_whenCountingMatches_thenMatchesNothing() async throws {
         try makeCategoryFixture()
         let catalog = try PhotoSupremeCatalog(path: fixturePath)
 
-        let count = try catalog.matchingItemCount(
+        let count = try await catalog.matchingItemCount(
             for: SampleFilter(category: CategoryFilter(propGUIDs: [], mode: .any)))
 
         XCTAssertEqual(count, 0, "\"has any of no categories\" is vacuously false")
     }
 
-    func test_givenEmptyPropGUIDsModeAll_whenCountingMatches_thenMatchesEverything() throws {
+    func test_givenEmptyPropGUIDsModeAll_whenCountingMatches_thenMatchesEverything() async throws {
         try makeCategoryFixture()
         let catalog = try PhotoSupremeCatalog(path: fixturePath)
 
-        let count = try catalog.matchingItemCount(
+        let count = try await catalog.matchingItemCount(
             for: SampleFilter(category: CategoryFilter(propGUIDs: [], mode: .all)))
 
         XCTAssertEqual(count, 5, "\"has all of no categories\" is vacuously true")
     }
 
-    func test_givenEmptyPropGUIDsModeNone_whenCountingMatches_thenMatchesEverything() throws {
+    func test_givenEmptyPropGUIDsModeNone_whenCountingMatches_thenMatchesEverything() async throws {
         try makeCategoryFixture()
         let catalog = try PhotoSupremeCatalog(path: fixturePath)
 
-        let count = try catalog.matchingItemCount(
+        let count = try await catalog.matchingItemCount(
             for: SampleFilter(category: CategoryFilter(propGUIDs: [], mode: .none)))
 
         XCTAssertEqual(count, 5, "\"has none of no categories\" is vacuously true")
@@ -246,7 +245,7 @@ final class PhotoSupremeCatalogTests: XCTestCase {
 
     // MARK: - matchingItemCount: combined rating + category
 
-    func test_givenRatingAndCategoryFilters_whenCountingMatches_thenBothMustMatch() throws {
+    func test_givenRatingAndCategoryFilters_whenCountingMatches_thenBothMustMatch() async throws {
         try makeFixture([
             FixtureItem(guid: "high-rated-with-cat", rating: 5, propGUIDs: ["catA"]),
             FixtureItem(guid: "high-rated-without-cat", rating: 5, propGUIDs: []),
@@ -254,7 +253,7 @@ final class PhotoSupremeCatalogTests: XCTestCase {
         ])
         let catalog = try PhotoSupremeCatalog(path: fixturePath)
 
-        let count = try catalog.matchingItemCount(
+        let count = try await catalog.matchingItemCount(
             for: SampleFilter(
                 rating: .atLeast(4),
                 category: CategoryFilter(propGUIDs: ["catA"], mode: .any)
@@ -265,11 +264,11 @@ final class PhotoSupremeCatalogTests: XCTestCase {
 
     // MARK: - sampleGUIDs
 
-    func test_givenNoFilter_whenSamplingFewerThanAvailable_thenReturnsThatManyDistinctGUIDs() throws {
+    func test_givenNoFilter_whenSamplingFewerThanAvailable_thenReturnsThatManyDistinctGUIDs() async throws {
         try makeFixture((1...50).map { FixtureItem(guid: "item-\($0)") })
         let catalog = try PhotoSupremeCatalog(path: fixturePath)
 
-        let guids = try catalog.sampleGUIDs(count: 10)
+        let guids = try await catalog.sampleGUIDs(count: 10)
 
         XCTAssertEqual(guids.count, 10)
         XCTAssertEqual(Set(guids).count, 10, "no duplicates")
@@ -278,29 +277,29 @@ final class PhotoSupremeCatalogTests: XCTestCase {
         }
     }
 
-    func test_givenCountExceedsMatchingRows_whenSampling_thenReturnsEveryMatchOnceNotMore() throws {
+    func test_givenCountExceedsMatchingRows_whenSampling_thenReturnsEveryMatchOnceNotMore() async throws {
         try makeFixture((1...5).map { FixtureItem(guid: "item-\($0)") })
         let catalog = try PhotoSupremeCatalog(path: fixturePath)
 
-        let guids = try catalog.sampleGUIDs(count: 1000)
+        let guids = try await catalog.sampleGUIDs(count: 1000)
 
         XCTAssertEqual(Set(guids), Set((1...5).map { "item-\($0)" }))
     }
 
-    func test_givenRatingFilter_whenSampling_thenEveryResultSatisfiesTheFilter() throws {
+    func test_givenRatingFilter_whenSampling_thenEveryResultSatisfiesTheFilter() async throws {
         try makeFixture((0...5).map { FixtureItem(guid: "item-\($0)", rating: $0) })
         let catalog = try PhotoSupremeCatalog(path: fixturePath)
 
-        let guids = try catalog.sampleGUIDs(count: 3, matching: SampleFilter(rating: .atLeast(3)))
+        let guids = try await catalog.sampleGUIDs(count: 3, matching: SampleFilter(rating: .atLeast(3)))
 
         XCTAssertEqual(Set(guids), Set(["item-3", "item-4", "item-5"]))
     }
 
-    func test_givenCategoryFilter_whenSampling_thenEveryResultSatisfiesTheFilter() throws {
+    func test_givenCategoryFilter_whenSampling_thenEveryResultSatisfiesTheFilter() async throws {
         try makeCategoryFixture()
         let catalog = try PhotoSupremeCatalog(path: fixturePath)
 
-        let guids = try catalog.sampleGUIDs(
+        let guids = try await catalog.sampleGUIDs(
             count: 10,
             matching: SampleFilter(category: CategoryFilter(propGUIDs: ["catA", "catB"], mode: .all))
         )
@@ -309,27 +308,27 @@ final class PhotoSupremeCatalogTests: XCTestCase {
         XCTAssertEqual(Set(guids), Set(["a-and-b", "a-b-and-c"]))
     }
 
-    func test_givenFilterMatchingNothing_whenSampling_thenReturnsEmpty() throws {
+    func test_givenFilterMatchingNothing_whenSampling_thenReturnsEmpty() async throws {
         try makeFixture((1...20).map { FixtureItem(guid: "item-\($0)", rating: 0) })
         let catalog = try PhotoSupremeCatalog(path: fixturePath)
 
-        let guids = try catalog.sampleGUIDs(count: 5, matching: SampleFilter(rating: .atLeast(1)))
+        let guids = try await catalog.sampleGUIDs(count: 5, matching: SampleFilter(rating: .atLeast(1)))
 
         XCTAssertEqual(guids, [])
     }
 
-    func test_givenEmptyCatalog_whenSampling_thenReturnsEmpty() throws {
+    func test_givenEmptyCatalog_whenSampling_thenReturnsEmpty() async throws {
         try makeFixture([])
         let catalog = try PhotoSupremeCatalog(path: fixturePath)
 
-        let guids = try catalog.sampleGUIDs(count: 5)
+        let guids = try await catalog.sampleGUIDs(count: 5)
 
         XCTAssertEqual(guids, [])
     }
 
     // MARK: - listProps (category picker data source)
 
-    func test_givenProps_whenListing_thenReturnsThemSortedByName() throws {
+    func test_givenProps_whenListing_thenReturnsThemSortedByName() async throws {
         try makeFixture([])
         try insertProps([
             (guid: "g-zebra", name: "Zebra"),
@@ -338,16 +337,17 @@ final class PhotoSupremeCatalogTests: XCTestCase {
         ])
         let catalog = try PhotoSupremeCatalog(path: fixturePath)
 
-        let props = try catalog.listProps()
+        let props = try await catalog.listProps()
 
         XCTAssertEqual(props.map(\.name), ["Apple", "Mango", "Zebra"])
         XCTAssertEqual(props.map(\.guid), ["g-apple", "g-mango", "g-zebra"])
     }
 
-    func test_givenNoProps_whenListing_thenReturnsEmpty() throws {
+    func test_givenNoProps_whenListing_thenReturnsEmpty() async throws {
         try makeFixture([])
         let catalog = try PhotoSupremeCatalog(path: fixturePath)
 
-        XCTAssertEqual(try catalog.listProps(), [])
+        let props = try await catalog.listProps()
+        XCTAssertEqual(props, [])
     }
 }

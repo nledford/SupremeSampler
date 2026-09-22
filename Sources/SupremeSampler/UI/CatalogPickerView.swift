@@ -19,8 +19,12 @@ struct CatalogPickerView: View {
                 .bold()
             Text("Open a Photo Supreme catalog (.cat.db) to build a sample.")
                 .foregroundStyle(.secondary)
-            Button("Open Catalog…") {
-                isPickingFile = true
+            if model.isOpeningCatalog {
+                ProgressView("Opening catalog…")
+            } else {
+                Button("Open Catalog…") {
+                    isPickingFile = true
+                }
             }
             if let errorMessage = model.errorMessage {
                 Text(errorMessage)
@@ -38,12 +42,20 @@ struct CatalogPickerView: View {
             switch result {
             case .success(let url):
                 // Security-scoped access: a no-op outside the App
-                // Sandbox (this app isn't sandboxed -- see AGENTS.md),
-                // but calling it is free and keeps this correct if
-                // sandboxing is ever turned on later.
+                // Sandbox (this app isn't sandboxed -- see AGENTS.md).
+                // Deliberately NOT paired with a matching
+                // stopAccessingSecurityScopedResource() here:
+                // openCatalog(at:) only *starts* its work (it launches a
+                // Task and returns immediately) and this app keeps
+                // querying the same file afterward as filters change, so
+                // stopping right after this call would revoke access
+                // before it's actually used, and again on every later
+                // query. If sandboxing is ever turned on, the stop
+                // belongs wherever the catalog is closed or replaced,
+                // which doesn't exist yet -- there's currently no way to
+                // close a catalog once opened.
                 _ = url.startAccessingSecurityScopedResource()
                 model.openCatalog(at: url.path)
-                url.stopAccessingSecurityScopedResource()
             case .failure(let error):
                 model.reportPickerFailure(error)
             }

@@ -19,7 +19,16 @@ import GRDB
 /// benchmark this catalog by hand earlier in this project's history.
 ///
 /// This type must never grow a write method. See AGENTS.md "Safety".
-struct PhotoSupremeCatalog {
+///
+/// `Sendable`: safe to use from any thread/task, not just the one that
+/// created it -- true here because `DatabasePool` itself is Sendable
+/// (it's a connection pool, built for concurrent access) and every
+/// other stored property is a value type. This is what lets `async`
+/// methods below call `dbPool.read` from a background executor while
+/// still being invoked from `@MainActor` code (see `SampleBuilderModel`):
+/// the compiler would refuse to compile this type as Sendable at all if
+/// that weren't actually safe.
+struct PhotoSupremeCatalog: Sendable {
     private let dbPool: DatabasePool
 
     // Same tuning constants as RandomCatalogSample.psc, and for the same
@@ -54,21 +63,30 @@ struct PhotoSupremeCatalog {
     /// `RandomCatalogSample.psc` runs at the start of every sample, and
     /// the one benchmarked against the real multi-million-row catalog when we
     /// compared `ORDER BY RANDOM()` against random-rowid sampling.
-    func catalogItemExtent() throws -> CatalogExtent {
+    func catalogItemExtent() async throws -> CatalogExtent {
         // `dbPool.read { ... }` runs the closure on one of the pool's
         // reader connections and hands back whatever it returns -- similar
         // shape to Rust's `pool.get()?.query(...)` with a connection
         // borrowed from a pool, or Python's `with pool.connection() as
         // conn:`, except here it's a closure instead of a context manager.
-        try dbPool.read { db in try Self.fetchExtent(db) }
+        //
+        // The `async` here is GRDB's own async overload of `read`, not a
+        // hand-rolled `Task.detached` wrapper: it hops to a background
+        // dispatch queue for the actual SQLite call and suspends the
+        // calling task rather than blocking whatever thread called this
+        // (in practice, the app's main thread/actor -- see
+        // SampleBuilderModel). This is the fix for a real bug: a
+        // category matching ~700k photos froze the UI when these calls
+        // were synchronous.
+        try await dbPool.read { db in try Self.fetchExtent(db) }
     }
 
     /// Counts photos matching `filter` -- the pre-flight check a script
     /// generator runs before ever writing a `.psc` file, so "this filter
     /// only matches 340 photos" surfaces immediately instead of after
     /// opening Photo Supreme and running a script that comes up short.
-    func matchingItemCount(for filter: SampleFilter) throws -> Int {
-        try dbPool.read { db in try Self.fetchMatchingCount(db, matching: filter) }
+    func matchingItemCount(for filter: SampleFilter) async throws -> Int {
+        try await dbPool.read { db in try Self.fetchMatchingCount(db, matching: filter) }
     }
 
     /// Draws up to `count` random, distinct photo GUIDs satisfying
@@ -84,8 +102,8 @@ struct PhotoSupremeCatalog {
     /// If `count` exceeds how many rows actually match `filter`, returns
     /// every match exactly once rather than looping forever trying to
     /// reach an unreachable count.
-    func sampleGUIDs(count: Int, matching filter: SampleFilter = SampleFilter()) throws -> [String] {
-        try dbPool.read { db in
+    func sampleGUIDs(count: Int, matching filter: SampleFilter = SampleFilter()) async throws -> [String] {
+        try await dbPool.read { db in
             let extent = try Self.fetchExtent(db)
             guard extent.maxRowID > 0 else { return [] }
 
@@ -155,8 +173,8 @@ struct PhotoSupremeCatalog {
     /// name-sorted list is enough for picking props to filter by, and
     /// avoids needing to model `idCache_Prop` and its maintenance
     /// triggers just to test this query.
-    func listProps() throws -> [CatalogProp] {
-        try dbPool.read { db in
+    func listProps() async throws -> [CatalogProp] {
+        try await dbPool.read { db in
             try Row.fetchAll(db, sql: "SELECT GUID, PropName FROM idProp ORDER BY PropName")
                 .map { CatalogProp(guid: $0["GUID"], name: $0["PropName"]) }
         }

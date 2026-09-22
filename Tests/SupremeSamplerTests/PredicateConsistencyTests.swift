@@ -91,7 +91,7 @@ final class PredicateConsistencyTests: XCTestCase {
         }
     }
 
-    func test_givenVariousFilters_whenComparingBothImplementations_thenCountsAgree() throws {
+    func test_givenVariousFilters_whenComparingBothImplementations_thenCountsAgree() async throws {
         try makeFixture([
             FixtureItem(guid: "none-r0", rating: 0, propGUIDs: []),
             FixtureItem(guid: "a-r2", rating: 2, propGUIDs: ["catA"]),
@@ -118,7 +118,7 @@ final class PredicateConsistencyTests: XCTestCase {
         ]
 
         for filter in filters {
-            let viaGRDB = try catalog.matchingItemCount(for: filter)
+            let viaGRDB = try await catalog.matchingItemCount(for: filter)
             let viaRawText = try rawTextMatchingCount(filter)
             XCTAssertEqual(
                 viaGRDB, viaRawText,

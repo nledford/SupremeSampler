@@ -42,25 +42,38 @@ together in `ContentView`. Copy-to-clipboard is the deliberate v1 save
 action — paste into Script Studio to review and test before anything
 is written to disk; there's no "save to file" yet.
 
-Catalog calls (`openCatalog`, `refreshMatchingCount`) run synchronously
-on the main actor rather than being dispatched to a background task --
-deliberate, given how fast these queries benchmark even against the
-real multi-million-row catalog (see the interpreter-quirks section below). If
-that ever changes (a much larger catalog, a slower query), that's the
-signal to introduce real background dispatch, not something to build
-preemptively.
+**Catalog calls run asynchronously**, via GRDB's own `async`
+`DatabasePool.read` overload (`PhotoSupremeCatalog`'s methods are all
+`async throws`) — not a hand-rolled `Task.detached`. This used to be
+synchronous-on-the-main-actor, deliberately, on the theory that these
+queries benchmark fast even at millions of rows; that held until a real
+category matching ~700k photos froze the UI, confirming the exact
+signal the old version of this note said to watch for. Fixed and
+click-through verified by hand.
 
-`SampleBuilderModelTests` only covers the pure parts (`currentFilter`,
-`generatedScript` derivation) — no fixture-backed test exists yet for
-`openCatalog`/`refreshMatchingCount` against a real catalog file.
-**The full interactive flow (opening a real `.cat.db`, picking
-categories, watching the live match count and preview update) has not
-been click-through verified yet** — confirmed only that the app builds,
-launches, and renders its initial screen correctly; the automated
-tooling used to drive this session couldn't reliably control the
-system Open panel in this particular environment. Do this by hand in
-`just run` before relying on the UI, and update this note once it's
-been done.
+`SampleBuilderModel.refreshMatchingCount()` is the part to be careful
+extending: it tracks its own `Task` and cancels-and-restarts on every
+call, so a fast filter change can't have its result clobbered by a
+slower, now-stale query that happens to finish later. The check is
+`guard !Task.isCancelled else { return }` *inside* the task after the
+`await`, not a `defer` — see the comment there for why a `defer` would
+be a real bug (a cancelled task's cleanup could stomp a newer task's
+`isCountingMatches = true`). `SampleBuilderCatalog`
+(`Sources/SupremeSampler/UI/SampleBuilderCatalog.swift`) is a narrow
+protocol "port" over just the operations the model needs, specifically
+so this cancellation behavior is unit-testable against a fake with a
+controllable artificial delay (`SampleBuilderModelTests.FakeCatalog`)
+rather than only reasoned about by inspection — confirmed the test
+actually catches the bug class by temporarily reintroducing the naive
+`defer` version and watching it fail, documented in that test's commit.
+
+`openCatalog` does *not* have the same tracked-Task/cancel guard --
+currently safe only because `CatalogPickerView` structurally can't call
+it twice while one is in flight (its button becomes a spinner, and the
+view itself unmounts once a catalog opens). A `guard !isOpeningCatalog`
+covers this as defense in depth. If a "switch catalog" or "reopen"
+feature is ever added, revisit whether `openCatalog` needs the same
+cancel-and-restart treatment as `refreshMatchingCount`.
 
 ## Comments: write for a Rust/TS/Python reader, not a Swift reader
 
