@@ -243,4 +243,68 @@ final class PhotoSupremeCatalogTests: XCTestCase {
 
         XCTAssertEqual(count, 1, "only high-rated-with-cat satisfies both constraints")
     }
+
+    // MARK: - sampleGUIDs
+
+    func test_givenNoFilter_whenSamplingFewerThanAvailable_thenReturnsThatManyDistinctGUIDs() throws {
+        try makeFixture((1...50).map { FixtureItem(guid: "item-\($0)") })
+        let catalog = try PhotoSupremeCatalog(path: fixturePath)
+
+        let guids = try catalog.sampleGUIDs(count: 10)
+
+        XCTAssertEqual(guids.count, 10)
+        XCTAssertEqual(Set(guids).count, 10, "no duplicates")
+        for guid in guids {
+            XCTAssertTrue(guid.hasPrefix("item-"), "every result should come from the fixture")
+        }
+    }
+
+    func test_givenCountExceedsMatchingRows_whenSampling_thenReturnsEveryMatchOnceNotMore() throws {
+        try makeFixture((1...5).map { FixtureItem(guid: "item-\($0)") })
+        let catalog = try PhotoSupremeCatalog(path: fixturePath)
+
+        let guids = try catalog.sampleGUIDs(count: 1000)
+
+        XCTAssertEqual(Set(guids), Set((1...5).map { "item-\($0)" }))
+    }
+
+    func test_givenRatingFilter_whenSampling_thenEveryResultSatisfiesTheFilter() throws {
+        try makeFixture((0...5).map { FixtureItem(guid: "item-\($0)", rating: $0) })
+        let catalog = try PhotoSupremeCatalog(path: fixturePath)
+
+        let guids = try catalog.sampleGUIDs(count: 3, matching: SampleFilter(rating: .atLeast(3)))
+
+        XCTAssertEqual(Set(guids), Set(["item-3", "item-4", "item-5"]))
+    }
+
+    func test_givenCategoryFilter_whenSampling_thenEveryResultSatisfiesTheFilter() throws {
+        try makeCategoryFixture()
+        let catalog = try PhotoSupremeCatalog(path: fixturePath)
+
+        let guids = try catalog.sampleGUIDs(
+            count: 10,
+            matching: SampleFilter(category: CategoryFilter(propGUIDs: ["catA", "catB"], mode: .all))
+        )
+
+        // makeCategoryFixture's only items with both catA and catB.
+        XCTAssertEqual(Set(guids), Set(["a-and-b", "a-b-and-c"]))
+    }
+
+    func test_givenFilterMatchingNothing_whenSampling_thenReturnsEmpty() throws {
+        try makeFixture((1...20).map { FixtureItem(guid: "item-\($0)", rating: 0) })
+        let catalog = try PhotoSupremeCatalog(path: fixturePath)
+
+        let guids = try catalog.sampleGUIDs(count: 5, matching: SampleFilter(rating: .atLeast(1)))
+
+        XCTAssertEqual(guids, [])
+    }
+
+    func test_givenEmptyCatalog_whenSampling_thenReturnsEmpty() throws {
+        try makeFixture([])
+        let catalog = try PhotoSupremeCatalog(path: fixturePath)
+
+        let guids = try catalog.sampleGUIDs(count: 5)
+
+        XCTAssertEqual(guids, [])
+    }
 }
