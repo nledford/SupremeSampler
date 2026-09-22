@@ -312,33 +312,47 @@ generator emits:
   the working pattern is a separate `const` keyword before each constant,
   with its explanatory comment above the `const` line.
 - **Script Studio's reported "Source position: L,C" for a syntax error
-  is not reliable** — confirmed twice now (once during the earlier
-  `Random`/`try...except` debugging, and again on 2026-09-22 for the
-  literal-concatenation quirk below), by finding the actual defect via
-  bisection against a known-good file and noting the reported line
-  didn't match. When bisecting a compile error, don't trust the
-  reported position as ground truth; diff against the last-known-good
-  script and change one thing at a time instead. One reproducible
-  pattern observed 2026-09-22: the reported line landed exactly 23
-  lines *before* the real defect in two different test files (43 vs.
-  the true 66; 40 vs. the true 63) — consistent enough to be a useful
-  hint if it recurs, but not confirmed as a general rule.
-- **Two adjacent string literals joined by `+` are rejected** (`'a' +
-  'b'`) — a "Syntax error" with the misleadingly-located reported
-  position described above, even though the *identical*-looking `'a' +
-  SomeVariable + 'b'` (a literal next to a runtime variable) compiles
-  fine, and even the single-line form `x := 'a' + 'b';` fails the same
-  way, so it's not about line breaks. Confirmed by bisection against
-  the real catalog on 2026-09-22 — see
+  is not reliable.** Confirmed repeatedly, most thoroughly on
+  2026-09-22: a long bisection session chasing a "Syntax error" always
+  reported at the same nonsensical comment line eventually traced the
+  real defect to a completely different, much-later part of the file.
+  When bisecting a compile error, don't trust the reported position;
+  diff against a last-known-good script and change one thing at a time
+  instead.
+- **Long/verbose multi-paragraph `//` comments can break compilation,
+  in a way that isn't reducible to one specific character** —
+  confirmed 2026-09-22 by extensive bisection (see the pascal repo's
+  own `AGENTS.md` for the full trail): a trivial script compiled fine,
+  and a fully-functional script with every `//` comment stripped
+  compiled and ran fine, but reintroducing a long function-doc comment
+  reliably reproduced the failure. Several individually-plausible
+  single-character culprits (an apostrophe in a contraction, a double
+  hyphen, the literal words "try/except", a thousands-separator comma)
+  were each tested in isolation against the full file and **none alone
+  explained it** — this looks like a volume/combination issue in
+  Script Studio's comment handling, not a deterministic single-token
+  bug, and was never pinned down further. **Practical rule: keep
+  comments in generated/hand-written `.psc` scripts short** (one or two
+  lines), and put longer documentation in AGENTS.md or a commit message
+  instead — nobody reads prose inside Script Studio anyway. This is why
+  `RandomSampleScriptGenerator`'s boilerplate keeps only short
+  per-`const` comments and has no long function-doc block, even though
+  earlier versions of both this generator and the hand-written
+  reference script had one.
+- **Two adjacent string literals joined by `+` were also suspected**
+  (`'a' + 'b'`, as opposed to `'a' + SomeVariable + 'b'`, a literal next
+  to a runtime variable, which is fine) during the same 2026-09-22
+  investigation, since every multi-line `CommandText` concatenation the
+  reference script ever used had a variable in the middle. This was
+  *not* ultimately confirmed as an actual restriction — later evidence
+  (the verbose-comment finding above) turned out to be the real
+  explanation for the original bug report. The generator still avoids
+  emitting two adjacent literals (see
   `RandomSampleScriptGenerator.extentCommandTextLines`/
-  `sampleCommandTextLines` for the fix (always build the full SQL text
-  as one Swift string, then wrap it in a *single* Pascal string
-  literal, never concatenate two literals at the Pascal level) and
-  `RandomSampleScriptGeneratorTests
-  .test_givenAnyFilter_whenGenerating_thenNeverJoinsTwoAdjacentStringLiteralsWithPlus`
-  for the regression guard. If you ever need to build a `CommandText`
-  from more than one piece of literal text again, concatenate them in
-  Swift before calling `PascalStringLiteral.escape`, not after.
+  `sampleCommandTextLines`, which build one merged Swift string and
+  wrap it in a single Pascal literal) since it's harmless and never
+  disproven, but don't cite this as a confirmed language restriction
+  the way the other bullets in this list are.
 - `TidElement.Data` (`TObject` in the public API, concrete class
   undocumented) can be assigned to a `Variant` and late-bound
   (`.Clear`, `.Items.SomeProp`) successfully — confirmed working, not a
