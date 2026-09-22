@@ -69,6 +69,13 @@ final class PhotoSupremeCatalogTests: XCTestCase {
                         PRIMARY KEY (GUID, CatalogItemGUID)
                     )
                     """)
+            try db.execute(
+                sql: """
+                    CREATE TABLE idProp (
+                        GUID TEXT PRIMARY KEY,
+                        PropName TEXT NOT NULL
+                    )
+                    """)
             for item in items {
                 try db.execute(
                     sql: "INSERT INTO idCatalogItem (GUID, Rating) VALUES (?, ?)",
@@ -80,6 +87,18 @@ final class PhotoSupremeCatalogTests: XCTestCase {
                         arguments: [propGUID, item.guid]
                     )
                 }
+            }
+        }
+    }
+
+    private func insertProps(_ props: [(guid: String, name: String)]) throws {
+        let dbQueue = try DatabaseQueue(path: fixturePath)
+        try dbQueue.write { db in
+            for prop in props {
+                try db.execute(
+                    sql: "INSERT INTO idProp (GUID, PropName) VALUES (?, ?)",
+                    arguments: [prop.guid, prop.name]
+                )
             }
         }
     }
@@ -306,5 +325,29 @@ final class PhotoSupremeCatalogTests: XCTestCase {
         let guids = try catalog.sampleGUIDs(count: 5)
 
         XCTAssertEqual(guids, [])
+    }
+
+    // MARK: - listProps (category picker data source)
+
+    func test_givenProps_whenListing_thenReturnsThemSortedByName() throws {
+        try makeFixture([])
+        try insertProps([
+            (guid: "g-zebra", name: "Zebra"),
+            (guid: "g-apple", name: "Apple"),
+            (guid: "g-mango", name: "Mango"),
+        ])
+        let catalog = try PhotoSupremeCatalog(path: fixturePath)
+
+        let props = try catalog.listProps()
+
+        XCTAssertEqual(props.map(\.name), ["Apple", "Mango", "Zebra"])
+        XCTAssertEqual(props.map(\.guid), ["g-apple", "g-mango", "g-zebra"])
+    }
+
+    func test_givenNoProps_whenListing_thenReturnsEmpty() throws {
+        try makeFixture([])
+        let catalog = try PhotoSupremeCatalog(path: fixturePath)
+
+        XCTAssertEqual(try catalog.listProps(), [])
     }
 }

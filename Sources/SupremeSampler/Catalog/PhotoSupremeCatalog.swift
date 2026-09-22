@@ -146,6 +146,22 @@ struct PhotoSupremeCatalog {
         }
     }
 
+    /// Lists every category/keyword prop in the catalog, sorted by name
+    /// -- the data source for a category picker in the UI. Only 189 rows
+    /// in the real catalog (per `docs/schema.md`), so no pagination or
+    /// filtering needed here; a plain `idProp` scan, not the richer
+    /// `v_PropPath` view (which resolves each prop's full breadcrumb
+    /// path and top-level category via `idCache_Prop`) -- a flat,
+    /// name-sorted list is enough for picking props to filter by, and
+    /// avoids needing to model `idCache_Prop` and its maintenance
+    /// triggers just to test this query.
+    func listProps() throws -> [CatalogProp] {
+        try dbPool.read { db in
+            try Row.fetchAll(db, sql: "SELECT GUID, PropName FROM idProp ORDER BY PropName")
+                .map { CatalogProp(guid: $0["GUID"], name: $0["PropName"]) }
+        }
+    }
+
     /// Shared by `catalogItemExtent()` and `sampleGUIDs`, both of which
     /// need it. Takes an already-open `Database` (rather than reading
     /// from `dbPool` itself) so `sampleGUIDs` can call this and
