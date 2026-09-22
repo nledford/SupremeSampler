@@ -16,12 +16,39 @@ struct SampleBuilderView: View {
     var body: some View {
         Form {
             Section("Sample") {
-                Stepper(
-                    "Sample size: \(model.sampleSize)",
-                    value: $model.sampleSize,
-                    in: 1...1_000_000,
-                    step: 100
-                )
+                // A number field rather than a bare `Stepper`: the old
+                // control could only be nudged 100 at a time, so reaching
+                // a value like 25000 meant 250 clicks. This is the SwiftUI
+                // equivalent of `<input type="number">` -- a `TextField`
+                // bound to an `Int` through a `FormatStyle` (`.number`),
+                // which parses whatever you type and reverts to the
+                // previous value if it doesn't parse, plus a label-less
+                // `Stepper` beside it for the same click-to-nudge
+                // affordance a browser's spinner arrows give.
+                // `LabeledContent` is what keeps this row's label aligned
+                // with the other rows' while the content is a composite
+                // (field + stepper) rather than one control.
+                LabeledContent("Sample size") {
+                    HStack(spacing: 6) {
+                        TextField(
+                            "Sample size",
+                            value: $model.sampleSize,
+                            format: .number.grouping(.never)
+                        )
+                        .labelsHidden()
+                        .textFieldStyle(.roundedBorder)
+                        .multilineTextAlignment(.trailing)
+                        .frame(width: 96)
+
+                        Stepper(
+                            "Sample size",
+                            value: $model.sampleSize,
+                            in: SampleBuilderModel.sampleSizeRange,
+                            step: 100
+                        )
+                        .labelsHidden()
+                    }
+                }
             }
 
             Section("Rating") {

@@ -140,6 +140,34 @@ final class SampleBuilderModelTests: XCTestCase {
         XCTAssertTrue(script.contains("Rating = 5"))
     }
 
+    func test_givenOutOfRangeSampleSize_whenSetting_thenClampsToRange() {
+        // The sample-size control is a free-typed number field, so unlike
+        // the `Stepper` it replaced it can produce values outside the
+        // range. Those must not reach `SAMPLE_SIZE = ...` in the
+        // generated script -- a size of 0 or less would sample nothing,
+        // silently.
+        let model = SampleBuilderModel()
+
+        model.sampleSize = 0
+        XCTAssertEqual(model.sampleSize, 1)
+        XCTAssertTrue(model.generatedScript.contains("SAMPLE_SIZE = 1;"))
+
+        model.sampleSize = -5
+        XCTAssertEqual(model.sampleSize, 1)
+
+        model.sampleSize = 2_000_000
+        XCTAssertEqual(model.sampleSize, 1_000_000)
+
+        // Both bounds and an interior value pass through untouched --
+        // the clamp must not be off by one at either end.
+        model.sampleSize = 1
+        XCTAssertEqual(model.sampleSize, 1)
+        model.sampleSize = 1_000_000
+        XCTAssertEqual(model.sampleSize, 1_000_000)
+        model.sampleSize = 25_000
+        XCTAssertEqual(model.sampleSize, 25_000)
+    }
+
     // MARK: - Async catalog behavior (via a fake SampleBuilderCatalog)
 
     /// A controllable test double for `SampleBuilderCatalog` -- lets

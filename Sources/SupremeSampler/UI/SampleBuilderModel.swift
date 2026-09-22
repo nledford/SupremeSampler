@@ -66,7 +66,31 @@ final class SampleBuilderModel {
     // awaitable via `waitForPendingMatchCountForTesting`.
     private var openCatalogTask: Task<Void, Never>?
 
-    var sampleSize: Int = 10_000
+    /// The bounds the sample size is held to. Lives on the model rather
+    /// than only in the view because the control that sets it is a
+    /// free-typed number field, not a `Stepper` -- a `Stepper` enforces
+    /// its own `in:` range, a text field doesn't, so without this a
+    /// typed `0` or negative value would flow straight into
+    /// `SAMPLE_SIZE = ...` and generate a script that silently samples
+    /// nothing.
+    static let sampleSizeRange = 1...1_000_000
+
+    /// `didSet` is Swift's property observer -- a hook that runs after
+    /// every write, the closest thing to a Python `@property` setter or
+    /// a JS `Object.defineProperty` setter, but without giving up the
+    /// plain stored-property syntax. Assigning to the property from
+    /// inside its own `didSet` does *not* re-enter `didSet` (observers
+    /// aren't recursive in Swift), so the clamp below settles in one
+    /// pass instead of looping.
+    var sampleSize: Int = 10_000 {
+        didSet {
+            let clamped = min(
+                max(sampleSize, Self.sampleSizeRange.lowerBound),
+                Self.sampleSizeRange.upperBound
+            )
+            if clamped != sampleSize { sampleSize = clamped }
+        }
+    }
 
     var ratingEnabled = false
     var ratingComparison: RatingComparisonKind = .atLeast

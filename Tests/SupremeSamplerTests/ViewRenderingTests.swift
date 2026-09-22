@@ -23,7 +23,7 @@ import XCTest
 ///    resulting state, the actual system clipboard).
 ///
 /// Where this stops short of proof: it can't confirm a `Picker`/`List`/
-/// `Stepper` is wired to the right binding, or that tapping a real
+/// `TextField` is wired to the right binding, or that tapping a real
 /// button on screen produces the described effect -- that's what the
 /// manual `just run` pass covers instead (see AGENTS.md).
 @MainActor
