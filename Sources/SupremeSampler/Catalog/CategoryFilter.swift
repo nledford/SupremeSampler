@@ -7,7 +7,12 @@ import Foundation
 /// - `any`: the photo has at least one of the given props.
 /// - `all`: the photo has every one of the given props.
 /// - `none`: the photo has none of the given props.
-enum CategoryMatchMode: Equatable {
+///
+/// `Hashable` (in addition to `Equatable`) so SwiftUI's `Picker` can use
+/// cases of this enum directly as selection tags -- Picker's selection
+/// binding requires `Hashable`, the same requirement Rust's `HashMap`
+/// key or a JS `Map` key would have.
+enum CategoryMatchMode: Equatable, Hashable {
     case any
     case all
     case none

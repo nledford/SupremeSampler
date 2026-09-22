@@ -31,6 +31,37 @@ Supreme's own Script Studio.
   real catalog is actually configured). Extend it with new query methods
   rather than opening connections elsewhere in the app.
 
+## UI
+
+`Sources/SupremeSampler/UI/`: `SampleBuilderModel` (`@Observable`,
+`@MainActor`) holds all rule-builder state and derives `SampleFilter`
+and the generated script from it; `CatalogPickerView` (file-open
+gate) → `SampleBuilderView` (rule builder, left pane) +
+`ScriptPreviewView` (live preview + Copy button, right pane), wired
+together in `ContentView`. Copy-to-clipboard is the deliberate v1 save
+action — paste into Script Studio to review and test before anything
+is written to disk; there's no "save to file" yet.
+
+Catalog calls (`openCatalog`, `refreshMatchingCount`) run synchronously
+on the main actor rather than being dispatched to a background task --
+deliberate, given how fast these queries benchmark even against the
+real multi-million-row catalog (see the interpreter-quirks section below). If
+that ever changes (a much larger catalog, a slower query), that's the
+signal to introduce real background dispatch, not something to build
+preemptively.
+
+`SampleBuilderModelTests` only covers the pure parts (`currentFilter`,
+`generatedScript` derivation) — no fixture-backed test exists yet for
+`openCatalog`/`refreshMatchingCount` against a real catalog file.
+**The full interactive flow (opening a real `.cat.db`, picking
+categories, watching the live match count and preview update) has not
+been click-through verified yet** — confirmed only that the app builds,
+launches, and renders its initial screen correctly; the automated
+tooling used to drive this session couldn't reliably control the
+system Open panel in this particular environment. Do this by hand in
+`just run` before relying on the UI, and update this note once it's
+been done.
+
 ## Comments: write for a Rust/TS/Python reader, not a Swift reader
 
 The repo owner is proficient in Rust, JavaScript/TypeScript, and Python,

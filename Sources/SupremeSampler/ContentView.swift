@@ -8,27 +8,27 @@ import SwiftUI
 // virtual DOM, except here the "component" is a Swift value, not a
 // function call.
 struct ContentView: View {
+    // `@State` holding an `@Observable` reference type is the modern
+    // (macOS 14+/Observation-framework) replacement for the older
+    // `@StateObject` -- this view owns the model's lifetime (it's
+    // created once, here, and survives view re-renders), and mutations
+    // to any of its properties trigger re-renders of whatever reads them.
+    @State private var model = SampleBuilderModel()
+
     var body: some View {
-        // VStack/Image/Text are all views themselves, nested like JSX
-        // elements. Each `.modifier(...)` call below (`.font`,
-        // `.foregroundStyle`, `.padding`, ...) does NOT mutate the view
-        // in place -- like Rust iterator adapters (`.map().filter()`) or
-        // JS array methods, each one returns a new, wrapped value. So
-        // `Text(...).font(...).bold()` is really
-        // `Bold(Font(Text(...)))` under the hood, just written fluently.
-        VStack(spacing: 12) {
-            Image(systemName: "photo.stack")
-                .font(.system(size: 48))
-                .foregroundStyle(.secondary)
-            Text("SupremeSampler")
-                .font(.title2)
-                .bold()
-            Text("Scaffold placeholder — rule builder and script preview go here.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
+        Group {
+            if model.catalogPath == nil {
+                CatalogPickerView(model: model)
+            } else {
+                NavigationSplitView {
+                    SampleBuilderView(model: model)
+                } detail: {
+                    ScriptPreviewView(model: model)
+                }
+                .navigationTitle("SupremeSampler")
+            }
         }
-        .frame(minWidth: 480, minHeight: 320)
-        .padding()
+        .frame(minWidth: 800, minHeight: 500)
     }
 }
 
