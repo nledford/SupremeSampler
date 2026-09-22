@@ -156,13 +156,35 @@ final class ViewRenderingTests: XCTestCase {
         _ = view.body
     }
 
-    func test_givenText_whenCopyingToClipboard_thenPasteboardContainsIt() {
-        let view = ScriptPreviewView(model: SampleBuilderModel())
-        let marker = "SupremeSampler test marker \(UUID().uuidString)"
+    func test_givenText_whenCopyingToClipboard_thenClipboardReceivesIt() {
+        // A fake, never the real NSPasteboard.general -- see
+        // ClipboardWriting's doc comment. An earlier version of this
+        // test wrote to the real system clipboard, which leaked a test
+        // marker string into it outside the test run entirely.
+        let clipboard = FakeClipboard()
+        let view = ScriptPreviewView(model: SampleBuilderModel(), clipboard: clipboard)
+        let text = "SELECT GUID FROM idCatalogItem;"
 
-        view.copyToClipboard(marker)
+        view.copyToClipboard(text)
 
-        XCTAssertEqual(NSPasteboard.general.string(forType: .string), marker)
+        XCTAssertEqual(clipboard.writtenText, text)
+    }
+}
+
+private final class FakeClipboard: ClipboardWriting, @unchecked Sendable {
+    private let lock = NSLock()
+    private var _writtenText: String?
+
+    var writtenText: String? {
+        lock.lock()
+        defer { lock.unlock() }
+        return _writtenText
+    }
+
+    func write(_ text: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        _writtenText = text
     }
 }
 

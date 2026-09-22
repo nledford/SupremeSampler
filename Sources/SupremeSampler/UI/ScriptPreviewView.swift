@@ -1,4 +1,3 @@
-import AppKit
 import SwiftUI
 
 /// The right-hand pane: a live, read-only preview of the generated
@@ -8,6 +7,11 @@ import SwiftUI
 /// written to disk, matching how this was originally described.
 struct ScriptPreviewView: View {
     var model: SampleBuilderModel
+
+    /// Defaults to the real system clipboard; tests substitute an
+    /// in-memory fake instead (see `ClipboardWriting`'s doc comment for
+    /// why that matters here specifically).
+    var clipboard: any ClipboardWriting = SystemClipboard()
 
     @State private var didCopy = false
 
@@ -43,15 +47,7 @@ struct ScriptPreviewView: View {
     // afterward, rather than only being reachable by simulating a
     // button tap, which a plain unit test can't do.
     func copyToClipboard(_ text: String) {
-        // NSPasteboard is AppKit's clipboard API -- macOS's equivalent
-        // of the browser's `navigator.clipboard` in JS, or the
-        // `arboard`/`copypasta` crates in Rust. SwiftUI has no clipboard
-        // API of its own on macOS, so this is one of the occasional
-        // drops down to AppKit directly.
-        let pasteboard = NSPasteboard.general
-        pasteboard.clearContents()
-        pasteboard.setString(text, forType: .string)
-
+        clipboard.write(text)
         didCopy = true
         Task {
             try? await Task.sleep(for: .seconds(1.5))
