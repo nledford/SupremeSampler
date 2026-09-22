@@ -168,6 +168,33 @@ final class SampleBuilderModelTests: XCTestCase {
         XCTAssertEqual(model.sampleSize, 25_000)
     }
 
+    func test_givenOutOfRangeSampleSize_whenSetting_thenAdvancesClampGeneration() {
+        // Repro: typing an out-of-range value into the sample-size
+        // `TextField` clamped the model correctly, but the field itself
+        // kept displaying the raw text the user typed -- confirmed by
+        // hand in the running app (type "5000000", the field still shows
+        // "5000000" while the generated script already reads
+        // `SAMPLE_SIZE = 1000000`, with no on-screen indication anything
+        // changed). `SampleBuilderView` forces the field to resync by
+        // giving it an `.id()` derived from this counter, so it only
+        // gets torn down and rebuilt (picking up the clamped value) on
+        // an actual clamp -- not on every keystroke, which would drop
+        // focus while the user is mid-edit.
+        let model = SampleBuilderModel()
+        let generationBeforeClamp = model.sampleSizeClampGeneration
+
+        model.sampleSize = 500 // in range: no clamp, no generation bump
+        XCTAssertEqual(model.sampleSizeClampGeneration, generationBeforeClamp)
+
+        model.sampleSize = 5_000_000 // out of range: clamps and bumps
+        XCTAssertEqual(model.sampleSize, 1_000_000)
+        XCTAssertEqual(model.sampleSizeClampGeneration, generationBeforeClamp + 1)
+
+        model.sampleSize = -1
+        XCTAssertEqual(model.sampleSize, 1)
+        XCTAssertEqual(model.sampleSizeClampGeneration, generationBeforeClamp + 2)
+    }
+
     // MARK: - Async catalog behavior (via a fake SampleBuilderCatalog)
 
     /// A controllable test double for `SampleBuilderCatalog` -- lets

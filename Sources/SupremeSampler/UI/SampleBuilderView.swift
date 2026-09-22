@@ -13,6 +13,15 @@ struct SampleBuilderView: View {
     // language feature.
     @Bindable var model: SampleBuilderModel
 
+    // `@FocusState` is SwiftUI's property wrapper for reading and driving
+    // keyboard focus declaratively -- closer to tracking a boolean piece
+    // of state than to imperatively calling `.focus()`/`becomeFirstResponder`
+    // the way AppKit/UIKit (or a JS `element.focus()` call) would. Needed
+    // here because giving the sample-size `TextField` a fresh `.id()` on
+    // a clamp (see that modifier below) recreates the field, which drops
+    // whatever had focus -- this re-asserts it in the same update pass.
+    @FocusState private var sampleSizeFieldIsFocused: Bool
+
     var body: some View {
         Form {
             Section("Sample") {
@@ -39,6 +48,16 @@ struct SampleBuilderView: View {
                         .textFieldStyle(.roundedBorder)
                         .multilineTextAlignment(.trailing)
                         .frame(width: 96)
+                        // Forces SwiftUI to recreate this field (so its
+                        // on-screen text re-reads the corrected value)
+                        // whenever the model actually clamps an
+                        // out-of-range entry -- see the doc comment on
+                        // `sampleSizeClampGeneration`. An `.id()` change
+                        // only rebuilds when the id itself changes, so
+                        // ordinary in-range typing (which doesn't bump
+                        // the generation) leaves the field untouched.
+                        .id(model.sampleSizeClampGeneration)
+                        .focused($sampleSizeFieldIsFocused)
 
                         Stepper(
                             "Sample size",
@@ -47,6 +66,25 @@ struct SampleBuilderView: View {
                             step: 100
                         )
                         .labelsHidden()
+                    }
+                    // The only way `sampleSizeClampGeneration` changes is
+                    // an out-of-range value written through the text
+                    // field above (the `Stepper`'s own `in:` keeps it in
+                    // range), so a change here reliably means "the field
+                    // the user was just typing in got recreated out from
+                    // under them" -- restore focus to the new instance so
+                    // typing can continue without an extra click.
+                    .onChange(of: model.sampleSizeClampGeneration) {
+                        // Deferred a tick (`DispatchQueue.main.async`,
+                        // roughly a `setTimeout(fn, 0)` in JS terms):
+                        // setting this in the same pass as the `.id()`
+                        // change above was confirmed by hand to lose the
+                        // race and leave the field unfocused -- the new
+                        // `TextField` instance isn't installed yet when
+                        // this closure runs.
+                        DispatchQueue.main.async {
+                            sampleSizeFieldIsFocused = true
+                        }
                     }
                 }
             }

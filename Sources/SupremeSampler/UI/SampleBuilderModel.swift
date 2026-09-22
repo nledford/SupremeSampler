@@ -75,6 +75,26 @@ final class SampleBuilderModel {
     /// nothing.
     static let sampleSizeRange = 1...1_000_000
 
+    /// Bumped every time `sampleSize`'s `didSet` actually clamps a value
+    /// (not on every write -- only when the typed value was out of
+    /// range). `SampleBuilderView` reads this to force its `TextField`
+    /// to rebuild.
+    ///
+    /// Why that's needed: confirmed by hand in the running app that
+    /// without it, typing an out-of-range value (e.g. "5000000") left
+    /// the field showing that raw, un-clamped text indefinitely -- even
+    /// though `sampleSize` itself, and the generated script, had already
+    /// silently moved to the clamped value (1,000,000). SwiftUI's
+    /// `TextField(value:format:)` only re-reads its bound value into its
+    /// own on-screen text when the field loses focus; a same-tick
+    /// program write to the binding (this `didSet`) doesn't refresh the
+    /// visible text while the user is still typing in it. Giving the
+    /// field a fresh `.id()` when (and only when) a clamp actually
+    /// happens forces SwiftUI to tear down and recreate it, which reads
+    /// the corrected value -- without this, in-range typing would also
+    /// rebuild the field (and drop focus) on every keystroke.
+    private(set) var sampleSizeClampGeneration = 0
+
     /// `didSet` is Swift's property observer -- a hook that runs after
     /// every write, the closest thing to a Python `@property` setter or
     /// a JS `Object.defineProperty` setter, but without giving up the
@@ -88,7 +108,10 @@ final class SampleBuilderModel {
                 max(sampleSize, Self.sampleSizeRange.lowerBound),
                 Self.sampleSizeRange.upperBound
             )
-            if clamped != sampleSize { sampleSize = clamped }
+            if clamped != sampleSize {
+                sampleSize = clamped
+                sampleSizeClampGeneration += 1
+            }
         }
     }
 
