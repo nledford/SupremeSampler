@@ -27,6 +27,40 @@ Supreme's own Script Studio.
   GRDB.swift is the planned choice when catalog-querying work starts —
   add it as a Swift Package dependency in `project.yml`.)
 
+## Comments: write for a Rust/TS/Python reader, not a Swift reader
+
+The repo owner is proficient in Rust, JavaScript/TypeScript, and Python,
+but not fluent in Swift/SwiftUI. Always write code with that in mind:
+
+- The first time a Swift- or SwiftUI-specific construct appears in a
+  file, add a short comment relating it to the closest Rust/TS/Python
+  equivalent. Established examples already in this codebase:
+  `struct`/value semantics vs. Rust structs and JS/Python reference
+  classes; `protocol` vs. a Rust trait or TS `interface`; `some View`
+  (opaque return type) vs. Rust's `-> impl Trait`; SwiftUI's declarative
+  view body and trailing-closure DSL vs. JSX/React component
+  composition; view modifiers (`.font()`, `.padding()`, ...) as
+  non-mutating wrapping, like Rust iterator adapters or JS array
+  methods; `XCTestCase` subclassing + `test`-prefixed method discovery
+  vs. Python's `unittest.TestCase`; `final` (no further subclassing) as
+  a concept that doesn't exist in Rust at all since Rust has no class
+  inheritance.
+- Don't re-explain the same construct every time it recurs — comment at
+  first appearance in a file (or first appearance overall, if it's
+  central enough to reference from elsewhere), not on every line.
+- Don't bother explaining things that are the same across all these
+  languages (if/for/while, basic arithmetic, string interpolation).
+  Focus on what's actually foreign: value vs. reference semantics,
+  protocols/generics/opaque types, property wrappers (`@State`,
+  `@Binding`, `@Published`, etc., once they appear), result builders
+  (the `@ViewBuilder` DSL), optionals (`?`/`!`) if their behavior
+  differs from Rust's `Option` or TS's `| undefined`, and SwiftUI's
+  declarative/reactive rendering model in general.
+- This is about comments and doc comments (`///`) in the code itself,
+  not a separate tutorial doc — the goal is that the owner can read a
+  `.swift` file top to bottom and follow it using their existing
+  background, without stopping to look up unfamiliar syntax elsewhere.
+
 ## Commands
 
 Run `just` for the full list. Common ones:
