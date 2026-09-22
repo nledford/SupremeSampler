@@ -5,9 +5,8 @@ import XCTest
 
 // BDD-style: each test name reads as Given/When/Then. XCTest has no
 // describe/it blocks like Jest or Python's pytest-bdd -- discovery is by
-// subclassing XCTestCase and a `test` name prefix (see
-// PlaceholderTests.swift's old comment, now removed along with the file
-// it was in) -- so the Given/When/Then goes in the method name itself.
+// subclassing XCTestCase and a `test` name prefix, so the Given/When/Then
+// goes in the method name itself.
 final class PhotoSupremeCatalogTests: XCTestCase {
     // Each test gets its own throwaway SQLite file, the same idea as
     // Python's `tempfile.NamedTemporaryFile` or Rust's
@@ -27,25 +26,65 @@ final class PhotoSupremeCatalogTests: XCTestCase {
         try? FileManager.default.removeItem(atPath: fixturePath)
     }
 
-    /// Writes a minimal `idCatalogItem` table with `rowCount` rows
-    /// (rowids 1...rowCount) to `fixturePath`, in WAL journal mode --
-    /// matching the real Photo Supreme catalog (see
-    /// `~/Pictures/Photo Supreme/docs/README.md`), since
-    /// `PhotoSupremeCatalog` opens readonly via a `DatabasePool`, which
-    /// requires the database to already be in WAL mode.
-    private func makeFixture(rowCount: Int) throws {
+    /// One row of fixture data: a photo, its rating, and the prop GUIDs
+    /// (categories/keywords) assigned to it. A plain data-holder struct
+    /// local to this test file -- Swift lets you nest/scope types like
+    /// this the same way you'd define a small helper class at module
+    /// scope in a Python or TS test file, just without needing it to be
+    /// importable from anywhere else.
+    private struct FixtureItem {
+        let guid: String
+        let rating: Int
+        let propGUIDs: [String]
+
+        init(guid: String = UUID().uuidString, rating: Int = 0, propGUIDs: [String] = []) {
+            self.guid = guid
+            self.rating = rating
+            self.propGUIDs = propGUIDs
+        }
+    }
+
+    /// Writes `idCatalogItem` and `idCatalogItemDefinition` (the two
+    /// tables rating/category filtering reads from -- see
+    /// `docs/schema.md` and `docs/relationships.md`) to `fixturePath`,
+    /// in WAL journal mode, matching the real catalog. `PhotoSupremeCatalog`
+    /// opens readonly via a `DatabasePool`, which requires the database
+    /// to already be in WAL mode.
+    private func makeFixture(_ items: [FixtureItem]) throws {
         let dbQueue = try DatabaseQueue(path: fixturePath)
         try dbQueue.write { db in
             try db.execute(sql: "PRAGMA journal_mode = WAL")
-            try db.execute(sql: "CREATE TABLE idCatalogItem (GUID TEXT PRIMARY KEY)")
-            for _ in 0..<rowCount {
+            try db.execute(
+                sql: """
+                    CREATE TABLE idCatalogItem (
+                        GUID TEXT PRIMARY KEY,
+                        Rating INTEGER NOT NULL DEFAULT 0
+                    )
+                    """)
+            try db.execute(
+                sql: """
+                    CREATE TABLE idCatalogItemDefinition (
+                        GUID TEXT NOT NULL,
+                        CatalogItemGUID TEXT NOT NULL,
+                        PRIMARY KEY (GUID, CatalogItemGUID)
+                    )
+                    """)
+            for item in items {
                 try db.execute(
-                    sql: "INSERT INTO idCatalogItem (GUID) VALUES (?)",
-                    arguments: [UUID().uuidString]
+                    sql: "INSERT INTO idCatalogItem (GUID, Rating) VALUES (?, ?)",
+                    arguments: [item.guid, item.rating]
                 )
+                for propGUID in item.propGUIDs {
+                    try db.execute(
+                        sql: "INSERT INTO idCatalogItemDefinition (GUID, CatalogItemGUID) VALUES (?, ?)",
+                        arguments: [propGUID, item.guid]
+                    )
+                }
             }
         }
     }
+
+    // MARK: - Extent (row count / max rowid)
 
     func test_givenMissingFile_whenOpening_thenThrowsFileNotFound() {
         let missingPath = "/nonexistent/\(UUID().uuidString).sqlite"
@@ -56,7 +95,7 @@ final class PhotoSupremeCatalogTests: XCTestCase {
     }
 
     func test_givenCatalogWithFiveRows_whenFetchingExtent_thenReturnsCountAndMaxRowID() throws {
-        try makeFixture(rowCount: 5)
+        try makeFixture((1...5).map { FixtureItem(guid: "item-\($0)") })
         let catalog = try PhotoSupremeCatalog(path: fixturePath)
 
         let extent = try catalog.catalogItemExtent()
@@ -68,11 +107,140 @@ final class PhotoSupremeCatalogTests: XCTestCase {
         // MAX(rowid) over zero rows is SQL NULL, not 0 -- worth its own
         // test since a naive `row["maxRowID"]` read into a non-optional
         // Int would crash on that NULL instead of producing a sane value.
-        try makeFixture(rowCount: 0)
+        try makeFixture([])
         let catalog = try PhotoSupremeCatalog(path: fixturePath)
 
         let extent = try catalog.catalogItemExtent()
 
         XCTAssertEqual(extent, CatalogExtent(rowCount: 0, maxRowID: 0))
+    }
+
+    // MARK: - matchingItemCount: no filter
+
+    func test_givenNoFilter_whenCountingMatches_thenReturnsTotalRowCount() throws {
+        try makeFixture((1...4).map { FixtureItem(guid: "item-\($0)") })
+        let catalog = try PhotoSupremeCatalog(path: fixturePath)
+
+        let count = try catalog.matchingItemCount(for: SampleFilter())
+
+        XCTAssertEqual(count, 4)
+    }
+
+    // MARK: - matchingItemCount: rating
+
+    func test_givenRatingFilters_whenCountingMatches_thenComparesCorrectly() throws {
+        // One item per rating value 0...5.
+        try makeFixture((0...5).map { FixtureItem(guid: "item-\($0)", rating: $0) })
+        let catalog = try PhotoSupremeCatalog(path: fixturePath)
+
+        XCTAssertEqual(
+            try catalog.matchingItemCount(for: SampleFilter(rating: .exactly(3))), 1,
+            "exactly(3) should match only the rating-3 item")
+        XCTAssertEqual(
+            try catalog.matchingItemCount(for: SampleFilter(rating: .atLeast(3))), 3,
+            "atLeast(3) should match ratings 3, 4, 5")
+        XCTAssertEqual(
+            try catalog.matchingItemCount(for: SampleFilter(rating: .atMost(2))), 3,
+            "atMost(2) should match ratings 0, 1, 2")
+    }
+
+    // MARK: - matchingItemCount: category
+
+    private func makeCategoryFixture() throws {
+        // catA, catB, catC are arbitrary idProp.GUID stand-ins -- their
+        // real form is a 32-char hex GUID (see docs/schema.md), but
+        // nothing in the query cares about GUID *format*, only equality,
+        // so short readable strings keep these tests legible.
+        try makeFixture([
+            FixtureItem(guid: "none", propGUIDs: []),
+            FixtureItem(guid: "a-only", propGUIDs: ["catA"]),
+            FixtureItem(guid: "a-and-b", propGUIDs: ["catA", "catB"]),
+            FixtureItem(guid: "a-b-and-c", propGUIDs: ["catA", "catB", "catC"]),
+            FixtureItem(guid: "b-only", propGUIDs: ["catB"]),
+        ])
+    }
+
+    func test_givenCategoryModeAny_whenCountingMatches_thenMatchesItemsWithAtLeastOneProp() throws {
+        try makeCategoryFixture()
+        let catalog = try PhotoSupremeCatalog(path: fixturePath)
+
+        let count = try catalog.matchingItemCount(
+            for: SampleFilter(category: CategoryFilter(propGUIDs: ["catA", "catC"], mode: .any)))
+
+        // a-only, a-and-b, a-b-and-c all carry catA; b-only and none do not.
+        XCTAssertEqual(count, 3)
+    }
+
+    func test_givenCategoryModeAll_whenCountingMatches_thenMatchesOnlyItemsWithEveryProp() throws {
+        try makeCategoryFixture()
+        let catalog = try PhotoSupremeCatalog(path: fixturePath)
+
+        let count = try catalog.matchingItemCount(
+            for: SampleFilter(category: CategoryFilter(propGUIDs: ["catA", "catB"], mode: .all)))
+
+        // Only a-and-b and a-b-and-c carry both catA and catB.
+        XCTAssertEqual(count, 2)
+    }
+
+    func test_givenCategoryModeNone_whenCountingMatches_thenMatchesOnlyItemsWithoutAnyProp() throws {
+        try makeCategoryFixture()
+        let catalog = try PhotoSupremeCatalog(path: fixturePath)
+
+        let count = try catalog.matchingItemCount(
+            for: SampleFilter(category: CategoryFilter(propGUIDs: ["catA"], mode: .none)))
+
+        // Only "none" and "b-only" lack catA.
+        XCTAssertEqual(count, 2)
+    }
+
+    // MARK: - matchingItemCount: category, empty propGUIDs (vacuous cases)
+
+    func test_givenEmptyPropGUIDsModeAny_whenCountingMatches_thenMatchesNothing() throws {
+        try makeCategoryFixture()
+        let catalog = try PhotoSupremeCatalog(path: fixturePath)
+
+        let count = try catalog.matchingItemCount(
+            for: SampleFilter(category: CategoryFilter(propGUIDs: [], mode: .any)))
+
+        XCTAssertEqual(count, 0, "\"has any of no categories\" is vacuously false")
+    }
+
+    func test_givenEmptyPropGUIDsModeAll_whenCountingMatches_thenMatchesEverything() throws {
+        try makeCategoryFixture()
+        let catalog = try PhotoSupremeCatalog(path: fixturePath)
+
+        let count = try catalog.matchingItemCount(
+            for: SampleFilter(category: CategoryFilter(propGUIDs: [], mode: .all)))
+
+        XCTAssertEqual(count, 5, "\"has all of no categories\" is vacuously true")
+    }
+
+    func test_givenEmptyPropGUIDsModeNone_whenCountingMatches_thenMatchesEverything() throws {
+        try makeCategoryFixture()
+        let catalog = try PhotoSupremeCatalog(path: fixturePath)
+
+        let count = try catalog.matchingItemCount(
+            for: SampleFilter(category: CategoryFilter(propGUIDs: [], mode: .none)))
+
+        XCTAssertEqual(count, 5, "\"has none of no categories\" is vacuously true")
+    }
+
+    // MARK: - matchingItemCount: combined rating + category
+
+    func test_givenRatingAndCategoryFilters_whenCountingMatches_thenBothMustMatch() throws {
+        try makeFixture([
+            FixtureItem(guid: "high-rated-with-cat", rating: 5, propGUIDs: ["catA"]),
+            FixtureItem(guid: "high-rated-without-cat", rating: 5, propGUIDs: []),
+            FixtureItem(guid: "low-rated-with-cat", rating: 1, propGUIDs: ["catA"]),
+        ])
+        let catalog = try PhotoSupremeCatalog(path: fixturePath)
+
+        let count = try catalog.matchingItemCount(
+            for: SampleFilter(
+                rating: .atLeast(4),
+                category: CategoryFilter(propGUIDs: ["catA"], mode: .any)
+            ))
+
+        XCTAssertEqual(count, 1, "only high-rated-with-cat satisfies both constraints")
     }
 }
