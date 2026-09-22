@@ -1,5 +1,10 @@
 name: SupremeSampler
 
+packages:
+  GRDB:
+    url: https://github.com/groue/GRDB.swift.git
+    from: 7.0.0
+
 options:
   bundleIdPrefix: com.nateledford
   deploymentTarget:
@@ -29,6 +34,9 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         ENABLE_HARDENED_RUNTIME: YES
+    dependencies:
+      - package: GRDB
+        product: GRDB
 
   SupremeSamplerTests:
     type: bundle.unit-test
@@ -40,6 +48,8 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
     dependencies:
       - target: SupremeSampler
+      - package: GRDB
+        product: GRDB
 
 schemes:
   SupremeSampler:

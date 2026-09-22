@@ -23,9 +23,13 @@ Supreme's own Script Studio.
   files/targets by editing `project.yml`, not by dragging files into
   Xcode (Xcode edits to the project structure will be lost on the next
   `xcodegen generate`; source file edits are unaffected).
-- SQLite access: read-only, from a local file. (No dependency added yet;
-  GRDB.swift is the planned choice when catalog-querying work starts —
-  add it as a Swift Package dependency in `project.yml`.)
+- SQLite access: read-only, via [GRDB.swift](https://github.com/groue/GRDB.swift)
+  (added as an SPM dependency in `project.yml`). `PhotoSupremeCatalog`
+  (`Sources/SupremeSampler/Catalog/`) is the only type allowed to open
+  the catalog file; it always sets `Configuration.readonly = true` and
+  uses a `DatabasePool` (GRDB's WAL-aware reader pool — matches how the
+  real catalog is actually configured). Extend it with new query methods
+  rather than opening connections elsewhere in the app.
 
 ## Comments: write for a Rust/TS/Python reader, not a Swift reader
 
