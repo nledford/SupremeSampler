@@ -75,6 +75,61 @@ covers this as defense in depth. If a "switch catalog" or "reopen"
 feature is ever added, revisit whether `openCatalog` needs the same
 cancel-and-restart treatment as `refreshMatchingCount`.
 
+## Testing and coverage
+
+`just test` runs the full suite (`xcodebuild test`); coverage is
+measured with `-enableCodeCoverage YES -resultBundlePath <path>` plus
+`xcrun xccov view --report <path>.xcresult` (per-file breakdown via
+`xccov view --archive --file <path> <path>.xcresult`). Source coverage
+(everything under `Sources/`, i.e. excluding the test target's own
+files) sits at 98%+ as of this note — comfortably above a 70% bar, kept
+that high deliberately since most of the app's logic (query layer,
+script generation, the view-model) is pure/testable, not because every
+last line needs covering for its own sake. Two known, deliberate,
+reasoned exceptions:
+
+- `PhotoSupremeCatalog.sampleGUIDs`'s retry-loop-exhaustion branch (the
+  `attempt < maxSampleAttempts` condition actually being what ends the
+  loop, rather than reaching `wantedCount`) is a safety net for a
+  scenario the oversample margin makes astronomically unlikely to hit
+  for real, and isn't reliably constructible in a deterministic test
+  without adding test-only seams to the sampling algorithm itself.
+  Left uncovered rather than gamed.
+- A couple of single-line SwiftUI closures (`RatingComparisonKind.id`,
+  one or two `ForEach`/`List` row closures) only run inside SwiftUI's
+  own rendering machinery, which a plain `XCTest` run never invokes —
+  see the note on `ViewRenderingTests` below for what *is* covered
+  there and why that's a meaningful, non-tautological signal despite
+  the gap.
+
+**SwiftUI views are tested by evaluating `.body`** with a range of
+representative model states (`ViewRenderingTests.swift`) — accessing a
+computed property genuinely executes its getter, so this exercises the
+real `if`/`else` branch logic in each view (does it crash, does the
+right sub-branch get hit), without needing XCUITest or an actual
+window. It cannot confirm a `Picker`/`List` binding is wired correctly
+or that tapping a real button produces the described effect on screen
+— that's still `just run`'s job (see the "click-through verified by
+hand" notes elsewhere in this file). Where a view had logic worth a
+*real* assertion (not just "didn't crash"), it was pulled out into a
+directly-callable method first: `CatalogPickerView.handleFileImporterResult`
+and `ScriptPreviewView.copyToClipboard` are both tested with genuine
+behavioral assertions (the model's resulting state; the actual system
+clipboard's contents), not just executed-without-crashing.
+
+A pre-existing, probabilistic bug was fixed while doing this work:
+`PhotoSupremeCatalog.sampleGUIDs` could occasionally undersample by 1
+when the retry loop's remaining shortfall got very small (batch size
+shrinks to match, and a small batch has a real chance of missing the
+one specific rowid still needed, even across every retry attempt) --
+fixed with a `minSampleBatchSize` floor. The regression test for this
+(`test_givenCountExceedsMatchingRows_whenSampling_thenReturnsEveryMatchOnceNotMore`)
+runs the scenario 200 times rather than once, since a probabilistic bug
+needs a probabilistic test to reliably catch it — a single run passing
+proves very little. Confirmed the strengthened test reliably fails
+against the pre-fix code (2 failures in 200 trials) before implementing
+the fix, then confirmed 600/600 trials pass across 3 runs after.
+
 ## Comments: write for a Rust/TS/Python reader, not a Swift reader
 
 The repo owner is proficient in Rust, JavaScript/TypeScript, and Python,

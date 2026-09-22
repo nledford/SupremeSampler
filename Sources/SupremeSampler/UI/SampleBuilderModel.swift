@@ -49,6 +49,13 @@ final class SampleBuilderModel {
     // `JoinHandle` solves in Rust.
     private var matchCountTask: Task<Void, Never>?
 
+    // Not used for cancellation (see the doc comment on `openCatalog`
+    // for why that isn't needed today) -- tracked only so a test can
+    // deterministically await this Task's completion instead of
+    // guessing a sleep duration, the same reason `matchCountTask` is
+    // awaitable via `waitForPendingMatchCountForTesting`.
+    private var openCatalogTask: Task<Void, Never>?
+
     var sampleSize: Int = 10_000
 
     var ratingEnabled = false
@@ -110,7 +117,7 @@ final class SampleBuilderModel {
         guard !isOpeningCatalog else { return }
         errorMessage = nil
         isOpeningCatalog = true
-        Task {
+        openCatalogTask = Task {
             defer { isOpeningCatalog = false }
             do {
                 let opened = try PhotoSupremeCatalog(path: path)
@@ -191,9 +198,10 @@ final class SampleBuilderModel {
     /// `#if DEBUG`: `@testable import SupremeSampler` already only
     /// works from this module's own test target, so there's no
     /// production-visibility risk to guard against further.
-    func injectCatalogForTesting(_ catalog: any SampleBuilderCatalog) {
+    func injectCatalogForTesting(_ catalog: any SampleBuilderCatalog, availableProps: [CatalogProp] = []) {
         self.catalog = catalog
         self.catalogPath = "test"
+        self.availableProps = availableProps
     }
 
     /// Test seam: awaits whatever `refreshMatchingCount()` call is
@@ -201,5 +209,11 @@ final class SampleBuilderModel {
     /// instead of guessing how long to sleep.
     func waitForPendingMatchCountForTesting() async {
         await matchCountTask?.value
+    }
+
+    /// Test seam: awaits whatever `openCatalog(at:)` call is currently
+    /// in flight.
+    func waitForPendingCatalogOpenForTesting() async {
+        await openCatalogTask?.value
     }
 }

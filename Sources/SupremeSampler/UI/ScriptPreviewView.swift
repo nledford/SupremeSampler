@@ -38,7 +38,11 @@ struct ScriptPreviewView: View {
         .frame(minWidth: 420)
     }
 
-    private func copyToClipboard(_ text: String) {
+    // `internal` (the default), not `private`: lets tests call this
+    // directly with a known string and check the real clipboard
+    // afterward, rather than only being reachable by simulating a
+    // button tap, which a plain unit test can't do.
+    func copyToClipboard(_ text: String) {
         // NSPasteboard is AppKit's clipboard API -- macOS's equivalent
         // of the browser's `navigator.clipboard` in JS, or the
         // `arboard`/`copypasta` crates in Rust. SwiftUI has no clipboard

@@ -39,26 +39,34 @@ struct CatalogPickerView: View {
         // that has no registered system file type to filter on -- this
         // just opens the standard picker without restricting by kind.
         .fileImporter(isPresented: $isPickingFile, allowedContentTypes: [.item]) { result in
-            switch result {
-            case .success(let url):
-                // Security-scoped access: a no-op outside the App
-                // Sandbox (this app isn't sandboxed -- see AGENTS.md).
-                // Deliberately NOT paired with a matching
-                // stopAccessingSecurityScopedResource() here:
-                // openCatalog(at:) only *starts* its work (it launches a
-                // Task and returns immediately) and this app keeps
-                // querying the same file afterward as filters change, so
-                // stopping right after this call would revoke access
-                // before it's actually used, and again on every later
-                // query. If sandboxing is ever turned on, the stop
-                // belongs wherever the catalog is closed or replaced,
-                // which doesn't exist yet -- there's currently no way to
-                // close a catalog once opened.
-                _ = url.startAccessingSecurityScopedResource()
-                model.openCatalog(at: url.path)
-            case .failure(let error):
-                model.reportPickerFailure(error)
-            }
+            handleFileImporterResult(result)
+        }
+    }
+
+    /// Pulled out of the `.fileImporter` closure so it's directly unit-
+    /// testable (construct a view, call this with a synthetic
+    /// `Result`, check the model's resulting state) without needing to
+    /// actually drive the system Open panel, which nothing short of a
+    /// full UI test could do.
+    func handleFileImporterResult(_ result: Result<URL, Error>) {
+        switch result {
+        case .success(let url):
+            // Security-scoped access: a no-op outside the App Sandbox
+            // (this app isn't sandboxed -- see AGENTS.md). Deliberately
+            // NOT paired with a matching
+            // stopAccessingSecurityScopedResource() here: openCatalog(at:)
+            // only *starts* its work (it launches a Task and returns
+            // immediately) and this app keeps querying the same file
+            // afterward as filters change, so stopping right after this
+            // call would revoke access before it's actually used, and
+            // again on every later query. If sandboxing is ever turned
+            // on, the stop belongs wherever the catalog is closed or
+            // replaced, which doesn't exist yet -- there's currently no
+            // way to close a catalog once opened.
+            _ = url.startAccessingSecurityScopedResource()
+            model.openCatalog(at: url.path)
+        case .failure(let error):
+            model.reportPickerFailure(error)
         }
     }
 }

@@ -1,3 +1,4 @@
+import GRDB
 import XCTest
 
 @testable import SupremeSampler
@@ -10,14 +11,60 @@ import XCTest
 // access to a MainActor type from here.
 @MainActor
 final class SampleBuilderModelTests: XCTestCase {
-    // The first block of tests only exercises `currentFilter`/
-    // `generatedScript`, pure computed properties with no catalog
-    // access. The async block further down exercises
-    // `refreshMatchingCount` against a fake `SampleBuilderCatalog`
-    // (see `FakeCatalog`) rather than a real SQLite file -- fixture-
-    // backed integration against a real file is PhotoSupremeCatalogTests'
-    // job; this file's job is the view-model's own state machine
-    // (loading flags, error handling, stale-request cancellation).
+    // Three kinds of tests in this file: pure `currentFilter`/
+    // `generatedScript` derivation (no catalog at all); `refreshMatchingCount`
+    // against a fake `SampleBuilderCatalog` (see `FakeCatalog`), which is
+    // how the stale-request cancellation race is made deterministically
+    // testable; and `openCatalog` against a real, small SQLite fixture
+    // (see `makeFixturePath`), since `openCatalog` itself constructs a
+    // real `PhotoSupremeCatalog` internally and can't take the fake --
+    // that's the one seam `SampleBuilderCatalog` doesn't cover.
+
+    /// Builds a minimal real SQLite fixture file (same shape as
+    /// `PhotoSupremeCatalogTests`') and returns its path, for the one
+    /// method here that can't be tested against `FakeCatalog`.
+    private func makeFixturePath(rowCount: Int = 3) throws -> String {
+        let path = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString + ".sqlite")
+            .path
+        let dbQueue = try DatabaseQueue(path: path)
+        try dbQueue.write { db in
+            try db.execute(sql: "PRAGMA journal_mode = WAL")
+            try db.execute(
+                sql: """
+                    CREATE TABLE idCatalogItem (
+                        GUID TEXT PRIMARY KEY,
+                        Rating INTEGER NOT NULL DEFAULT 0
+                    )
+                    """)
+            try db.execute(
+                sql: """
+                    CREATE TABLE idCatalogItemDefinition (
+                        GUID TEXT NOT NULL,
+                        CatalogItemGUID TEXT NOT NULL,
+                        PRIMARY KEY (GUID, CatalogItemGUID)
+                    )
+                    """)
+            try db.execute(
+                sql: """
+                    CREATE TABLE idProp (
+                        GUID TEXT PRIMARY KEY,
+                        PropName TEXT NOT NULL
+                    )
+                    """)
+            for i in 1...rowCount {
+                try db.execute(
+                    sql: "INSERT INTO idCatalogItem (GUID, Rating) VALUES (?, ?)",
+                    arguments: ["item-\(i)", 0]
+                )
+            }
+            try db.execute(
+                sql: "INSERT INTO idProp (GUID, PropName) VALUES (?, ?)",
+                arguments: ["prop-1", "Vacation"]
+            )
+        }
+        return path
+    }
 
     func test_givenNoFiltersEnabled_whenComputingCurrentFilter_thenFilterIsUnconstrained() {
         let model = SampleBuilderModel()
@@ -190,6 +237,77 @@ final class SampleBuilderModelTests: XCTestCase {
         try await Task.sleep(nanoseconds: 150_000_000)
 
         XCTAssertEqual(model.matchingCount, 5)
+        XCTAssertFalse(model.isCountingMatches)
+    }
+
+    // MARK: - openCatalog (against a real SQLite fixture)
+
+    func test_givenValidCatalogPath_whenOpening_thenLoadsPropsAndMatchCount() async throws {
+        let path = try makeFixturePath(rowCount: 3)
+        let model = SampleBuilderModel()
+
+        model.openCatalog(at: path)
+        await model.waitForPendingCatalogOpenForTesting()
+
+        XCTAssertEqual(model.catalogPath, path)
+        XCTAssertEqual(model.availableProps.map(\.name), ["Vacation"])
+        XCTAssertFalse(model.isOpeningCatalog)
+        XCTAssertNil(model.errorMessage)
+        // openCatalog kicks off a matching-count refresh once it
+        // succeeds; wait for that too rather than asserting on a
+        // possibly-still-in-flight count.
+        await model.waitForPendingMatchCountForTesting()
+        XCTAssertEqual(model.matchingCount, 3)
+    }
+
+    func test_givenInvalidCatalogPath_whenOpening_thenSetsErrorAndClearsState() async {
+        let model = SampleBuilderModel()
+
+        model.openCatalog(at: "/nonexistent/\(UUID().uuidString).sqlite")
+        await model.waitForPendingCatalogOpenForTesting()
+
+        XCTAssertNil(model.catalogPath)
+        XCTAssertEqual(model.availableProps, [])
+        XCTAssertNil(model.matchingCount)
+        XCTAssertNotNil(model.errorMessage)
+        XCTAssertFalse(model.isOpeningCatalog)
+    }
+
+    /// Exercises the re-entrancy guard added as defense in depth (see
+    /// `openCatalog`'s doc comment): calling it again while one is
+    /// already opening is a no-op, not a second overlapping attempt.
+    func test_givenCatalogAlreadyOpening_whenOpeningAgain_thenSecondCallIsIgnored() async throws {
+        let path = try makeFixturePath()
+        let model = SampleBuilderModel()
+
+        model.openCatalog(at: path)
+        XCTAssertTrue(model.isOpeningCatalog, "first call should have started opening synchronously")
+
+        model.openCatalog(at: "/some/other/path.sqlite")
+        await model.waitForPendingCatalogOpenForTesting()
+
+        // If the guard didn't work, the second call's failure path
+        // (bad path) could have won the race and left catalogPath nil.
+        XCTAssertEqual(model.catalogPath, path)
+    }
+
+    func test_givenPickerFailure_whenReported_thenSetsErrorMessage() {
+        struct FakeError: Error, LocalizedError {
+            var errorDescription: String? { "disk unmounted" }
+        }
+        let model = SampleBuilderModel()
+
+        model.reportPickerFailure(FakeError())
+
+        XCTAssertEqual(model.errorMessage, "Couldn't open file picker: disk unmounted")
+    }
+
+    func test_givenNoCatalogOpen_whenRefreshingMatchingCount_thenClearsCountWithoutError() {
+        let model = SampleBuilderModel()
+
+        model.refreshMatchingCount()
+
+        XCTAssertNil(model.matchingCount)
         XCTAssertFalse(model.isCountingMatches)
     }
 }

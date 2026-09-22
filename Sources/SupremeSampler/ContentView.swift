@@ -15,6 +15,36 @@ struct ContentView: View {
     // to any of its properties trigger re-renders of whatever reads them.
     @State private var model = SampleBuilderModel()
 
+    /// Plain default init for real use (`ContentView()` in
+    /// `SupremeSamplerApp`) -- relies on `model`'s own
+    /// `= SampleBuilderModel()` default above. Declared explicitly only
+    /// because defining the `model:` init below (needed for testing)
+    /// suppresses Swift's normally-automatic memberwise init.
+    init() {}
+
+    /// Test seam: lets a test supply a pre-configured model (e.g. one
+    /// with `injectCatalogForTesting` already called) to exercise the
+    /// `NavigationSplitView` branch below, which `init()` above can
+    /// never reach on its own. No default value here (unlike a more
+    /// typical `model: SampleBuilderModel = SampleBuilderModel()`)
+    /// because Swift evaluates a default *argument* expression in a
+    /// separate, non-isolated context even when the initializer itself
+    /// is `@MainActor` -- constructing the `@MainActor`-isolated
+    /// `SampleBuilderModel` there fails to compile. `init()` above
+    /// sidesteps that by using the *property's* default instead of a
+    /// parameter's.
+    ///
+    /// `_model = State(wrappedValue: model)` is how you seed a `@State`
+    /// property from a custom init -- the underscore-prefixed name
+    /// reaches the property wrapper itself (`State<SampleBuilderModel>`)
+    /// rather than the wrapped value, similar in spirit to reaching a
+    /// Python property's underlying storage via `self.__dict__`, just a
+    /// language feature here instead of a convention.
+    @MainActor
+    init(model: SampleBuilderModel) {
+        _model = State(wrappedValue: model)
+    }
+
     var body: some View {
         Group {
             if model.catalogPath == nil {
