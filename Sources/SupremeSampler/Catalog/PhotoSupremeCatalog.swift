@@ -182,19 +182,47 @@ struct PhotoSupremeCatalog: Sendable {
         }
     }
 
-    /// Lists every category/keyword prop in the catalog, sorted by name
-    /// -- the data source for a category picker in the UI. Only 189 rows
-    /// in the real catalog (per `docs/schema.md`), so no pagination or
-    /// filtering needed here; a plain `idProp` scan, not the richer
-    /// `v_PropPath` view (which resolves each prop's full breadcrumb
-    /// path and top-level category via `idCache_Prop`) -- a flat,
-    /// name-sorted list is enough for picking props to filter by, and
-    /// avoids needing to model `idCache_Prop` and its maintenance
-    /// triggers just to test this query.
-    func listProps() async throws -> [CatalogProp] {
+    /// Lists the full category/keyword tree -- the data source for a
+    /// hierarchical category picker in the UI. Fetches `idPropCategory`
+    /// (the roots) and `idProp` (everything else, each linked to its
+    /// parent via `ParentGUID`) as two flat queries, then builds the
+    /// tree in pure Swift via `CatalogPropNode.buildTree` -- see that
+    /// function's doc comment for why (ported from a recursive SQL CTE
+    /// in an earlier Rust tool, deliberately not kept as SQL recursion
+    /// here). Only ~189 `idProp` rows in the real catalog (per
+    /// `docs/schema.md`), so fetching everything flat and building the
+    /// tree in memory is cheap; no pagination needed.
+    ///
+    /// Excludes `idPropCategory` rows whose GUID uses the brace-wrapped
+    /// `{XXXXXXXX-XXXX-...}` form (Photo Supreme's own built-in
+    /// categories) rather than the plain 32-char hex form every user-
+    /// created category/prop uses -- confirmed against the real catalog
+    /// and by the user directly that the built-ins are deliberately
+    /// unused here, the same filter an earlier Rust tool applied for the
+    /// same reason.
+    func listPropTree() async throws -> [CatalogPropNode] {
         try await dbPool.read { db in
-            try Row.fetchAll(db, sql: "SELECT GUID, PropName FROM idProp ORDER BY PropName")
-                .map { CatalogProp(guid: $0["GUID"], name: $0["PropName"]) }
+            let categories = try Row.fetchAll(
+                db,
+                sql: """
+                    SELECT GUID, CategoryName FROM idPropCategory
+                    WHERE GUID NOT LIKE '{%'
+                    """
+            ).map { (guid: $0["GUID"] as String, name: $0["CategoryName"] as String) }
+
+            // `ParentGUID` is documented as always present for a real
+            // idProp row (docs/schema.md: every prop's parent is either
+            // another prop or an idPropCategory) -- read as `String?`
+            // and skip via `compactMap` rather than trap on an
+            // unexpected NULL, the same defensive stance taken for
+            // `MAX(rowid)` elsewhere in this type.
+            let props = try Row.fetchAll(db, sql: "SELECT GUID, ParentGUID, PropName FROM idProp")
+                .compactMap { row -> (guid: String, parentGUID: String, name: String)? in
+                    guard let parentGUID = row["ParentGUID"] as String? else { return nil }
+                    return (guid: row["GUID"], parentGUID: parentGUID, name: row["PropName"])
+                }
+
+            return CatalogPropNode.buildTree(categories: categories, props: props)
         }
     }
 

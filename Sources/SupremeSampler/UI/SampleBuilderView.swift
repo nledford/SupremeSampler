@@ -46,17 +46,28 @@ struct SampleBuilderView: View {
                     }
                     .pickerStyle(.segmented)
 
-                    if model.availableProps.isEmpty {
+                    if model.propTree.isEmpty {
                         Text("No categories in this catalog.")
                             .foregroundStyle(.secondary)
                     } else {
-                        // macOS Lists support multi-select natively via
-                        // cmd/shift-click when given a Set binding, no
-                        // explicit edit mode needed (unlike iOS).
-                        List(model.availableProps, selection: $model.selectedCategoryGUIDs) { prop in
-                            Text(prop.name)
+                        // `children: \.childrenOrNil` is what makes this
+                        // a genuine outline/tree view (disclosure
+                        // triangles, expand/collapse) instead of a flat
+                        // list -- native SwiftUI, no third-party tree-
+                        // view component needed. Combined with
+                        // `selection:`, macOS Lists support multi-select
+                        // natively via cmd/shift-click, no explicit edit
+                        // mode needed (unlike iOS) -- selecting a parent
+                        // node doesn't implicitly select its children;
+                        // each node (leaf or not) is its own independent
+                        // choice, matching how a photo can be tagged
+                        // with any prop in the tree directly, not just
+                        // leaves.
+                        List(model.propTree, children: \.childrenOrNil, selection: $model.selectedCategoryGUIDs) {
+                            node in
+                            Text(node.name)
                         }
-                        .frame(minHeight: 150)
+                        .frame(minHeight: 200)
                         Text("\(model.selectedCategoryGUIDs.count) selected")
                             .foregroundStyle(.secondary)
                             .font(.caption)

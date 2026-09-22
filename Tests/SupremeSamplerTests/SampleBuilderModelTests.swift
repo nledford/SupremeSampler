@@ -49,7 +49,15 @@ final class SampleBuilderModelTests: XCTestCase {
                 sql: """
                     CREATE TABLE idProp (
                         GUID TEXT PRIMARY KEY,
+                        ParentGUID TEXT,
                         PropName TEXT NOT NULL
+                    )
+                    """)
+            try db.execute(
+                sql: """
+                    CREATE TABLE idPropCategory (
+                        GUID TEXT PRIMARY KEY,
+                        CategoryName TEXT NOT NULL
                     )
                     """)
             for i in 1...rowCount {
@@ -58,9 +66,14 @@ final class SampleBuilderModelTests: XCTestCase {
                     arguments: ["item-\(i)", 0]
                 )
             }
+            // A single top-level category with no children -- enough
+            // for tests that just need `propTree` to be non-empty and
+            // named something recognizable, without needing to exercise
+            // nesting (that's CatalogPropNodeTests' and
+            // PhotoSupremeCatalogTests' job).
             try db.execute(
-                sql: "INSERT INTO idProp (GUID, PropName) VALUES (?, ?)",
-                arguments: ["prop-1", "Vacation"]
+                sql: "INSERT INTO idPropCategory (GUID, CategoryName) VALUES (?, ?)",
+                arguments: ["cat-1", "Vacation"]
             )
         }
         return path
@@ -152,7 +165,7 @@ final class SampleBuilderModelTests: XCTestCase {
             var result: Result<Int, Error>
         }
 
-        let props: [CatalogProp]
+        let propTree: [CatalogPropNode]
         /// Keyed by 1-based call index (the Nth call to
         /// `matchingItemCount` across this fake's lifetime), so a test
         /// can give the 1st call different behavior than the 2nd.
@@ -161,12 +174,12 @@ final class SampleBuilderModelTests: XCTestCase {
         private let lock = NSLock()
         private var callCount = 0
 
-        init(props: [CatalogProp] = [], responses: [Int: Response] = [:]) {
-            self.props = props
+        init(propTree: [CatalogPropNode] = [], responses: [Int: Response] = [:]) {
+            self.propTree = propTree
             self.responses = responses
         }
 
-        func listProps() async throws -> [CatalogProp] { props }
+        func listPropTree() async throws -> [CatalogPropNode] { propTree }
 
         func matchingItemCount(for filter: SampleFilter) async throws -> Int {
             lock.lock()
@@ -250,7 +263,7 @@ final class SampleBuilderModelTests: XCTestCase {
         await model.waitForPendingCatalogOpenForTesting()
 
         XCTAssertEqual(model.catalogPath, path)
-        XCTAssertEqual(model.availableProps.map(\.name), ["Vacation"])
+        XCTAssertEqual(model.propTree.map(\.name), ["Vacation"])
         XCTAssertFalse(model.isOpeningCatalog)
         XCTAssertNil(model.errorMessage)
         // openCatalog kicks off a matching-count refresh once it
@@ -267,7 +280,7 @@ final class SampleBuilderModelTests: XCTestCase {
         await model.waitForPendingCatalogOpenForTesting()
 
         XCTAssertNil(model.catalogPath)
-        XCTAssertEqual(model.availableProps, [])
+        XCTAssertEqual(model.propTree, [])
         XCTAssertNil(model.matchingCount)
         XCTAssertNotNil(model.errorMessage)
         XCTAssertFalse(model.isOpeningCatalog)

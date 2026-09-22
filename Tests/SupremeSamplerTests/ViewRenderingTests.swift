@@ -115,10 +115,31 @@ final class ViewRenderingTests: XCTestCase {
         let model = SampleBuilderModel()
         model.injectCatalogForTesting(
             FakeCatalogForViewTests(),
-            availableProps: [CatalogProp(guid: "g1", name: "Vacation")]
+            propTree: [CatalogPropNode(guid: "g1", name: "Vacation", children: [])]
         )
         model.categoryEnabled = true
         model.selectedCategoryGUIDs = ["g1"]
+
+        let view = SampleBuilderView(model: model)
+        _ = view.body
+    }
+
+    func test_givenNestedCategoryTree_whenBuildingSampleBuilderView_thenBodyDoesNotCrash() {
+        // A non-trivial tree (a category with children) so the outline
+        // view's disclosure-triangle/children rendering path gets
+        // exercised too, not just the flat-leaf case above.
+        let model = SampleBuilderModel()
+        model.injectCatalogForTesting(
+            FakeCatalogForViewTests(),
+            propTree: [
+                CatalogPropNode(
+                    guid: "cat-nature",
+                    name: "Nature",
+                    children: [CatalogPropNode(guid: "prop-pines", name: "Pines", children: [])]
+                )
+            ]
+        )
+        model.categoryEnabled = true
 
         let view = SampleBuilderView(model: model)
         _ = view.body
@@ -195,11 +216,11 @@ private final class FakeClipboard: ClipboardWriting, @unchecked Sendable {
 /// delay so a test can observe `isCountingMatches == true` before the
 /// query resolves.
 private struct FakeCatalogForViewTests: SampleBuilderCatalog {
-    var props: [CatalogProp] = []
+    var propTree: [CatalogPropNode] = []
     var matchCount: Int = 0
     var matchDelayNanoseconds: UInt64 = 0
 
-    func listProps() async throws -> [CatalogProp] { props }
+    func listPropTree() async throws -> [CatalogPropNode] { propTree }
 
     func matchingItemCount(for filter: SampleFilter) async throws -> Int {
         if matchDelayNanoseconds > 0 {

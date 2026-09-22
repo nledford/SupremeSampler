@@ -89,6 +89,41 @@ covers this as defense in depth. If a "switch catalog" or "reopen"
 feature is ever added, revisit whether `openCatalog` needs the same
 cancel-and-restart treatment as `refreshMatchingCount`.
 
+## Category tree (hierarchical picker)
+
+The category/keyword picker is a genuine hierarchical tree, not a flat
+list: `idPropCategory` rows are top-level nodes, `idProp` rows are
+their (potentially multi-level, via `ParentGUID`) children.
+`CatalogPropNode` (`Sources/SupremeSampler/Catalog/CatalogPropNode.swift`)
+is the pure, DB-free domain model — `buildTree(categories:props:)` takes
+flat `(guid, name)`/`(guid, parentGUID, name)` tuples (as fetched by
+`PhotoSupremeCatalog.listPropTree()`) and recursively nests them,
+sorting siblings by name at every level. `childrenOrNil` (`nil` for a
+leaf, non-nil otherwise) exists specifically to match the shape
+SwiftUI's native `List(_:children:selection:)`/`OutlineGroup` want for
+their recursive `KeyPath` — that's genuinely enough for a real
+disclosure-triangle tree view with multi-select (macOS supports
+cmd/shift-click natively via `selection:`); **no third-party tree-view
+package is needed.** See `SampleBuilderView`'s `List(model.propTree,
+children: \.childrenOrNil, ...)`.
+
+The recursive-nesting approach itself was informed by a `WITH RECURSIVE`
+SQL CTE found in an archived Rust project the repo owner previously wrote
+against this same catalog schema
+(`~/Projects/rust/lusia`, `src/db/images.rs`) — ported here
+as a plain Swift tree-builder (rather than a recursive CTE) so the logic
+stays unit-testable without a database (`CatalogPropNodeTests.swift`).
+
+**Photo Supreme's built-in categories are deliberately excluded.**
+`idPropCategory` rows fall into two groups: Photo Supreme's own built-in
+categories (Objects, Miscellaneous, People, Events, Places, Internal),
+whose `GUID` is brace-wrapped (`{XXXXXXXX-XXXX-...}`), and user-created
+custom categories, whose `GUID` is a plain 32-character hex string.
+`listPropTree()` filters with `WHERE GUID NOT LIKE '{%'` — confirmed as
+a deliberate choice by the repo owner ("I do not use the built-in
+categories prepended with `{`"), not an oversight; don't "fix" this to
+include them without asking first.
+
 ## Testing and coverage
 
 `just test` runs the full suite (`xcodebuild test`); coverage is

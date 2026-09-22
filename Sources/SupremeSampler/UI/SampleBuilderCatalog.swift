@@ -13,7 +13,7 @@ import Foundation
 /// against a real, fast query -- a fake can be given an artificial delay
 /// on demand; a real file mostly can't.
 protocol SampleBuilderCatalog: Sendable {
-    func listProps() async throws -> [CatalogProp]
+    func listPropTree() async throws -> [CatalogPropNode]
     func matchingItemCount(for filter: SampleFilter) async throws -> Int
 }
 

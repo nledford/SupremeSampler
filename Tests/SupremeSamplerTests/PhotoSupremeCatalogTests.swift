@@ -73,7 +73,15 @@ final class PhotoSupremeCatalogTests: XCTestCase {
                 sql: """
                     CREATE TABLE idProp (
                         GUID TEXT PRIMARY KEY,
+                        ParentGUID TEXT,
                         PropName TEXT NOT NULL
+                    )
+                    """)
+            try db.execute(
+                sql: """
+                    CREATE TABLE idPropCategory (
+                        GUID TEXT PRIMARY KEY,
+                        CategoryName TEXT NOT NULL
                     )
                     """)
             for item in items {
@@ -92,12 +100,28 @@ final class PhotoSupremeCatalogTests: XCTestCase {
     }
 
     private func insertProps(_ props: [(guid: String, name: String)]) throws {
+        try insertProps(props.map { (guid: $0.guid, parentGUID: nil, name: $0.name) })
+    }
+
+    private func insertProps(_ props: [(guid: String, parentGUID: String?, name: String)]) throws {
         let dbQueue = try DatabaseQueue(path: fixturePath)
         try dbQueue.write { db in
             for prop in props {
                 try db.execute(
-                    sql: "INSERT INTO idProp (GUID, PropName) VALUES (?, ?)",
-                    arguments: [prop.guid, prop.name]
+                    sql: "INSERT INTO idProp (GUID, ParentGUID, PropName) VALUES (?, ?, ?)",
+                    arguments: [prop.guid, prop.parentGUID, prop.name]
+                )
+            }
+        }
+    }
+
+    private func insertPropCategories(_ categories: [(guid: String, name: String)]) throws {
+        let dbQueue = try DatabaseQueue(path: fixturePath)
+        try dbQueue.write { db in
+            for category in categories {
+                try db.execute(
+                    sql: "INSERT INTO idPropCategory (GUID, CategoryName) VALUES (?, ?)",
+                    arguments: [category.guid, category.name]
                 )
             }
         }
@@ -338,28 +362,55 @@ final class PhotoSupremeCatalogTests: XCTestCase {
         XCTAssertEqual(guids, [])
     }
 
-    // MARK: - listProps (category picker data source)
+    // MARK: - listPropTree (category picker data source)
 
-    func test_givenProps_whenListing_thenReturnsThemSortedByName() async throws {
+    func test_givenNoCategories_whenListingPropTree_thenReturnsEmpty() async throws {
         try makeFixture([])
+        let catalog = try PhotoSupremeCatalog(path: fixturePath)
+
+        let tree = try await catalog.listPropTree()
+
+        XCTAssertEqual(tree, [])
+    }
+
+    func test_givenCategoriesAndNestedProps_whenListingPropTree_thenBuildsTheFullHierarchy() async throws {
+        try makeFixture([])
+        try insertPropCategories([
+            (guid: "cat-places", name: "Places"),
+            (guid: "cat-nature", name: "Nature"),
+        ])
         try insertProps([
-            (guid: "g-zebra", name: "Zebra"),
-            (guid: "g-apple", name: "Apple"),
-            (guid: "g-mango", name: "Mango"),
+            (guid: "prop-pines", parentGUID: "cat-nature", name: "Pines"),
+            (guid: "prop-tall-pines", parentGUID: "prop-pines", name: "Tall Pines"),
         ])
         let catalog = try PhotoSupremeCatalog(path: fixturePath)
 
-        let props = try await catalog.listProps()
+        let tree = try await catalog.listPropTree()
 
-        XCTAssertEqual(props.map(\.name), ["Apple", "Mango", "Zebra"])
-        XCTAssertEqual(props.map(\.guid), ["g-apple", "g-mango", "g-zebra"])
+        XCTAssertEqual(tree.map(\.name), ["Nature", "Places"])
+        let body = try XCTUnwrap(tree.first { $0.name == "Nature" })
+        XCTAssertEqual(body.children.map(\.name), ["Pines"])
+        XCTAssertEqual(body.children[0].children.map(\.name), ["Tall Pines"])
     }
 
-    func test_givenNoProps_whenListing_thenReturnsEmpty() async throws {
+    /// Confirmed against the real catalog and by the user directly: the
+    /// six built-in categories Photo Supreme ships with (their GUIDs are
+    /// the classic brace-wrapped `{XXXXXXXX-XXXX-...}` form, unlike
+    /// every user-created prop/category's plain 32-char hex GUID) are
+    /// unused here on purpose, and should be excluded from the picker --
+    /// same filter an earlier Rust tool
+    /// (`~/Projects/rust/lusia`) applied for the same
+    /// reason.
+    func test_givenBuiltInCategoryWithBraceWrappedGUID_whenListingPropTree_thenExcludesIt() async throws {
         try makeFixture([])
+        try insertPropCategories([
+            (guid: "{2AD216A8-9A52-482B-87A1-547F0D6C6F6B}", name: "Objects"),
+            (guid: "cat-nature", name: "Nature"),
+        ])
         let catalog = try PhotoSupremeCatalog(path: fixturePath)
 
-        let props = try await catalog.listProps()
-        XCTAssertEqual(props, [])
+        let tree = try await catalog.listPropTree()
+
+        XCTAssertEqual(tree.map(\.name), ["Nature"])
     }
 }

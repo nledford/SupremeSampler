@@ -32,7 +32,7 @@ import Observation
 @MainActor
 final class SampleBuilderModel {
     private(set) var catalogPath: String?
-    private(set) var availableProps: [CatalogProp] = []
+    private(set) var propTree: [CatalogPropNode] = []
     private(set) var matchingCount: Int?
     private(set) var errorMessage: String?
     private(set) var isOpeningCatalog = false
@@ -131,7 +131,7 @@ final class SampleBuilderModel {
             defer { isOpeningCatalog = false }
             do {
                 let opened = try PhotoSupremeCatalog(path: path)
-                availableProps = try await opened.listProps()
+                propTree = try await opened.listPropTree()
                 catalog = opened
                 catalogPath = path
                 catalogStore.savePath(path)
@@ -139,7 +139,7 @@ final class SampleBuilderModel {
             } catch {
                 catalog = nil
                 catalogPath = nil
-                availableProps = []
+                propTree = []
                 matchingCount = nil
                 errorMessage = "Couldn't open catalog: \(error.localizedDescription)"
             }
@@ -225,10 +225,10 @@ final class SampleBuilderModel {
     /// `#if DEBUG`: `@testable import SupremeSampler` already only
     /// works from this module's own test target, so there's no
     /// production-visibility risk to guard against further.
-    func injectCatalogForTesting(_ catalog: any SampleBuilderCatalog, availableProps: [CatalogProp] = []) {
+    func injectCatalogForTesting(_ catalog: any SampleBuilderCatalog, propTree: [CatalogPropNode] = []) {
         self.catalog = catalog
         self.catalogPath = "test"
-        self.availableProps = availableProps
+        self.propTree = propTree
     }
 
     /// Test seam: awaits whatever `refreshMatchingCount()` call is
