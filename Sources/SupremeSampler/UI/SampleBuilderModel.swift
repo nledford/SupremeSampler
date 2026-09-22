@@ -40,6 +40,16 @@ final class SampleBuilderModel {
 
     private var catalog: (any SampleBuilderCatalog)?
 
+    /// Where "which catalog was last opened" is persisted across app
+    /// launches. Defaults to the real `UserDefaults`-backed
+    /// implementation; tests substitute an in-memory fake, the same
+    /// pattern as `catalog`/`SampleBuilderCatalog`.
+    private let catalogStore: any RecentCatalogStore
+
+    init(catalogStore: any RecentCatalogStore = UserDefaultsRecentCatalogStore()) {
+        self.catalogStore = catalogStore
+    }
+
     // Tracks the in-flight match-count query so a newer request can
     // cancel a still-running older one -- otherwise a slow query for a
     // filter you've already changed away from could finish *after* a
@@ -124,6 +134,7 @@ final class SampleBuilderModel {
                 availableProps = try await opened.listProps()
                 catalog = opened
                 catalogPath = path
+                catalogStore.savePath(path)
                 refreshMatchingCount()
             } catch {
                 catalog = nil
@@ -133,6 +144,22 @@ final class SampleBuilderModel {
                 errorMessage = "Couldn't open catalog: \(error.localizedDescription)"
             }
         }
+    }
+
+    /// Called once when the app's root view first appears (see
+    /// `ContentView`'s `.task`). If a catalog was opened successfully in
+    /// a previous launch and its path is still on record, tries to open
+    /// it again automatically -- same success/failure handling as a
+    /// manual `openCatalog` call, so a moved/deleted/unmounted file
+    /// falls back to the picker with an explanatory error rather than
+    /// failing silently or getting stuck. Deliberately does *not* clear
+    /// the saved path on failure: the file might just be on a
+    /// disconnected external volume, worth trying again next launch
+    /// rather than forgetting it after one miss.
+    func attemptAutoOpenRecentCatalog() {
+        guard catalogPath == nil else { return }
+        guard let path = catalogStore.loadPath() else { return }
+        openCatalog(at: path)
     }
 
     /// Surfaces a failure from the system file picker itself (rare --

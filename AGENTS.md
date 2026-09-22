@@ -42,6 +42,20 @@ together in `ContentView`. Copy-to-clipboard is the deliberate v1 save
 action — paste into Script Studio to review and test before anything
 is written to disk; there's no "save to file" yet.
 
+**The last successfully-opened catalog path is remembered** via
+`RecentCatalogStore` (another narrow protocol port, `UserDefaults`-backed
+in production) and reopened automatically on launch
+(`SampleBuilderModel.attemptAutoOpenRecentCatalog()`, called once from
+`ContentView`'s `.task`). Deliberately does *not* forget the path on a
+failed auto-open (moved/deleted/unmounted file) — falls back to the
+picker with an error instead, since the file might just be on a
+disconnected external volume and worth retrying next launch. No
+security-scoped bookmark handling: unnecessary since this app isn't
+sandboxed (see the `CatalogPickerView` note on that below); a plain path
+string is enough. If sandboxing is ever added, this is the other place
+(besides the `CatalogPickerView` comment already flagging it) that
+would need revisiting.
+
 **Catalog calls run asynchronously**, via GRDB's own `async`
 `DatabasePool.read` overload (`PhotoSupremeCatalog`'s methods are all
 `async throws`) — not a hand-rolled `Task.detached`. This used to be

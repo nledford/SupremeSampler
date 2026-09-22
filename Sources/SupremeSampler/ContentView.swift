@@ -59,6 +59,17 @@ struct ContentView: View {
             }
         }
         .frame(minWidth: 800, minHeight: 500)
+        // `.task` runs once when the view first appears (and again if
+        // its identity changes), the idiomatic SwiftUI hook for a one-
+        // time startup action -- unlike putting this in `init()`, which
+        // would be wrong here: SwiftUI can construct a View *value*
+        // (running its init) many times over a single view's actual
+        // on-screen lifetime as it re-diffs the tree, so an init isn't a
+        // reliable "this happened once" signal the way it would be for
+        // a class in Rust/TS/Python.
+        .task {
+            model.attemptAutoOpenRecentCatalog()
+        }
     }
 }
 

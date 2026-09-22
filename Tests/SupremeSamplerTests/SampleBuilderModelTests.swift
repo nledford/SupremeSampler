@@ -310,4 +310,104 @@ final class SampleBuilderModelTests: XCTestCase {
         XCTAssertNil(model.matchingCount)
         XCTAssertFalse(model.isCountingMatches)
     }
+
+    // MARK: - Remembering the last-opened catalog
+
+    /// An in-memory `RecentCatalogStore` fake -- same role as
+    /// `FakeCatalog` above, just for the persistence port instead of the
+    /// query port. `@unchecked Sendable` justified the same way: the
+    /// lock is what actually makes the one piece of mutable state safe
+    /// to touch from a background task.
+    private final class FakeRecentCatalogStore: RecentCatalogStore, @unchecked Sendable {
+        private let lock = NSLock()
+        private var path: String?
+
+        init(initialPath: String? = nil) {
+            path = initialPath
+        }
+
+        func loadPath() -> String? {
+            lock.lock()
+            defer { lock.unlock() }
+            return path
+        }
+
+        func savePath(_ path: String?) {
+            lock.lock()
+            defer { lock.unlock() }
+            self.path = path
+        }
+    }
+
+    func test_givenSuccessfulOpen_whenCatalogOpens_thenPathIsSavedToStore() async throws {
+        let path = try makeFixturePath()
+        let store = FakeRecentCatalogStore()
+        let model = SampleBuilderModel(catalogStore: store)
+
+        model.openCatalog(at: path)
+        await model.waitForPendingCatalogOpenForTesting()
+
+        XCTAssertEqual(store.loadPath(), path)
+    }
+
+    func test_givenFailedOpen_whenCatalogFailsToOpen_thenPathIsNotSaved() async {
+        let store = FakeRecentCatalogStore()
+        let model = SampleBuilderModel(catalogStore: store)
+
+        model.openCatalog(at: "/nonexistent/\(UUID().uuidString).sqlite")
+        await model.waitForPendingCatalogOpenForTesting()
+
+        XCTAssertNil(store.loadPath())
+    }
+
+    func test_givenSavedPathThatStillExists_whenAttemptingAutoOpen_thenOpensItAutomatically() async throws {
+        let path = try makeFixturePath(rowCount: 2)
+        let store = FakeRecentCatalogStore(initialPath: path)
+        let model = SampleBuilderModel(catalogStore: store)
+
+        model.attemptAutoOpenRecentCatalog()
+        await model.waitForPendingCatalogOpenForTesting()
+
+        XCTAssertEqual(model.catalogPath, path)
+        XCTAssertNil(model.errorMessage)
+    }
+
+    func test_givenNoSavedPath_whenAttemptingAutoOpen_thenDoesNothing() {
+        let store = FakeRecentCatalogStore()
+        let model = SampleBuilderModel(catalogStore: store)
+
+        model.attemptAutoOpenRecentCatalog()
+
+        // Synchronous: attemptAutoOpenRecentCatalog returns immediately
+        // without starting a Task at all when there's no saved path, so
+        // there's nothing to await here -- if it *had* started opening,
+        // isOpeningCatalog would already be true by this point (same
+        // reasoning as the CatalogPickerView spinner tests).
+        XCTAssertFalse(model.isOpeningCatalog)
+        XCTAssertNil(model.catalogPath)
+    }
+
+    func test_givenSavedPathNoLongerExists_whenAttemptingAutoOpen_thenFallsBackWithError() async {
+        let store = FakeRecentCatalogStore(initialPath: "/nonexistent/\(UUID().uuidString).sqlite")
+        let model = SampleBuilderModel(catalogStore: store)
+
+        model.attemptAutoOpenRecentCatalog()
+        await model.waitForPendingCatalogOpenForTesting()
+
+        XCTAssertNil(model.catalogPath)
+        XCTAssertNotNil(model.errorMessage)
+    }
+
+    func test_givenCatalogAlreadyOpen_whenAttemptingAutoOpen_thenDoesNotReopen() {
+        let store = FakeRecentCatalogStore(initialPath: "/some/other/path.sqlite")
+        let model = SampleBuilderModel(catalogStore: store)
+        model.injectCatalogForTesting(FakeCatalog())
+
+        model.attemptAutoOpenRecentCatalog()
+
+        // If the guard were missing, this would have started opening
+        // the *store's* path, clobbering the already-injected state.
+        XCTAssertFalse(model.isOpeningCatalog)
+        XCTAssertEqual(model.catalogPath, "test")
+    }
 }
