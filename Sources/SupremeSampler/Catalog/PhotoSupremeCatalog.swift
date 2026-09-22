@@ -42,6 +42,21 @@ struct PhotoSupremeCatalog: Sendable {
     private static let maxSampleAttempts = 8
     private static let maxSampleBatchSize = 100_000
 
+    // NOT in RandomCatalogSample.psc (yet) -- found by this Swift port's
+    // own test suite, not by anything observed in Photo Supreme itself.
+    // The shortfall-proportional batch size shrinks to nearly nothing
+    // once only one or two rows are still needed; at high density (most
+    // of the remaining candidate space is a match) that's still enough
+    // rows to draw, but a *specific* still-needed rowid can plausibly be
+    // missed by a batch that small, even across every retry attempt --
+    // reproduced reliably (failed ~1% of trials) against a tiny 5-row
+    // fixture before this floor existed. A real, large catalog rarely
+    // reaches a shortfall this small while density is still this high,
+    // which is exactly why it went unnoticed until a small fixture
+    // (or, in principle, a very narrow filter with few remaining
+    // unsampled matches) made it likely enough to observe.
+    private static let minSampleBatchSize = 50
+
     /// Opens `path` read-only.
     ///
     /// - Throws: `CatalogError.fileNotFound` if nothing exists at `path`
@@ -132,7 +147,10 @@ struct PhotoSupremeCatalog: Sendable {
                 attempt += 1
                 let shortfall = wantedCount - guids.count
                 let batchSize = min(
-                    Int(Double(shortfall) / density * Self.oversampleMargin) + 1,
+                    max(
+                        Int(Double(shortfall) / density * Self.oversampleMargin) + 1,
+                        Self.minSampleBatchSize
+                    ),
                     Self.maxSampleBatchSize
                 )
 

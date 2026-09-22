@@ -277,13 +277,25 @@ final class PhotoSupremeCatalogTests: XCTestCase {
         }
     }
 
+    // Run many trials rather than one: the underlying algorithm is
+    // genuinely randomized (see PhotoSupremeCatalog.sampleGUIDs), so a
+    // single run passing proves very little -- a bug here manifests as
+    // an occasional, low-probability miss (high density + a tiny
+    // remaining shortfall shrinks the oversample batch enough that a
+    // specific still-needed rowid can be missed across all retry
+    // attempts), not a guaranteed failure. 200 trials gives >99.99%
+    // confidence of catching a bug with even a 5% chance of firing per
+    // trial ((0.95)^200 ≈ 0.000035), while still running in well under a
+    // second against a 5-row fixture.
     func test_givenCountExceedsMatchingRows_whenSampling_thenReturnsEveryMatchOnceNotMore() async throws {
         try makeFixture((1...5).map { FixtureItem(guid: "item-\($0)") })
         let catalog = try PhotoSupremeCatalog(path: fixturePath)
+        let expected = Set((1...5).map { "item-\($0)" })
 
-        let guids = try await catalog.sampleGUIDs(count: 1000)
-
-        XCTAssertEqual(Set(guids), Set((1...5).map { "item-\($0)" }))
+        for trial in 1...200 {
+            let guids = try await catalog.sampleGUIDs(count: 1000)
+            XCTAssertEqual(Set(guids), expected, "trial \(trial) undersampled: got \(guids.sorted())")
+        }
     }
 
     func test_givenRatingFilter_whenSampling_thenEveryResultSatisfiesTheFilter() async throws {
