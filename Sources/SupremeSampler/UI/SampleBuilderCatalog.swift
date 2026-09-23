@@ -15,6 +15,7 @@ import Foundation
 protocol SampleBuilderCatalog: Sendable {
     func listPropTree() async throws -> [CatalogPropNode]
     func matchingItemCount(for filter: SampleFilter) async throws -> Int
+    func folderPhotoCounts(for filter: SampleFilter) async throws -> [FolderPhotoCount]
 }
 
 extension PhotoSupremeCatalog: SampleBuilderCatalog {}

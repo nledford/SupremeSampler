@@ -302,18 +302,60 @@ final class SampleBuilderModelTests: XCTestCase {
             var result: Result<Int, Error>
         }
 
+        struct FolderResponse {
+            var delayNanoseconds: UInt64 = 0
+            var result: Result<[FolderPhotoCount], Error>
+        }
+
         let propTree: [CatalogPropNode]
         /// Keyed by 1-based call index (the Nth call to
         /// `matchingItemCount` across this fake's lifetime), so a test
         /// can give the 1st call different behavior than the 2nd.
         let responses: [Int: Response]
+        /// The same, for `folderPhotoCounts`.
+        let folderResponses: [Int: FolderResponse]
 
         private let lock = NSLock()
         private var callCount = 0
+        private var folderCallCount = 0
 
-        init(propTree: [CatalogPropNode] = [], responses: [Int: Response] = [:]) {
+        var folderCalls: Int {
+            lock.lock()
+            defer { lock.unlock() }
+            return folderCallCount
+        }
+
+        init(
+            propTree: [CatalogPropNode] = [], responses: [Int: Response] = [:],
+            folderResponses: [Int: FolderResponse] = [:]
+        ) {
             self.propTree = propTree
             self.responses = responses
+            self.folderResponses = folderResponses
+        }
+
+        func folderPhotoCounts(for filter: SampleFilter) async throws -> [FolderPhotoCount] {
+            lock.lock()
+            folderCallCount += 1
+            let myCall = folderCallCount
+            lock.unlock()
+
+            let response = folderResponses[myCall] ?? FolderResponse(result: .success([]))
+            if response.delayNanoseconds > 0 {
+                // Deliberately *not* `Task.sleep`, which returns early
+                // (throwing) once the task is cancelled -- a superseded
+                // audit would then never reach the code that must not
+                // write its result. A real query runs to the end
+                // regardless, so this delay ignores cancellation too.
+                // (`withCheckedContinuation` suspends until `resume()`,
+                // like awaiting a hand-built JS `Promise`.)
+                await withCheckedContinuation { continuation in
+                    DispatchQueue.global().asyncAfter(deadline: .now() + .nanoseconds(Int(response.delayNanoseconds))) {
+                        continuation.resume()
+                    }
+                }
+            }
+            return try response.result.get()
         }
 
         func listPropTree() async throws -> [CatalogPropNode] { propTree }
@@ -334,6 +376,138 @@ final class SampleBuilderModelTests: XCTestCase {
 
     private struct FakeError: Error, LocalizedError {
         var errorDescription: String? { "boom" }
+    }
+
+    // MARK: - Folder balance preview (the folder audit)
+
+    private let twoGroups = [
+        FolderPhotoCount(path: "/p/big/1/", photos: 81),
+        FolderPhotoCount(path: "/p/small/1/", photos: 1),
+    ]
+
+    func test_givenFolderBalanceOff_whenRefreshingTheFolderAudit_thenTheCatalogIsNotAsked() async {
+        let catalog = FakeCatalog()
+        let model = SampleBuilderModel.forTesting()
+        model.injectCatalogForTesting(catalog)
+
+        model.refreshFolderAudit()
+        await model.waitForPendingFolderAuditForTesting()
+
+        XCTAssertEqual(catalog.folderCalls, 0)
+        XCTAssertFalse(model.isAuditingFolders)
+        XCTAssertNil(model.folderBalancePreview)
+    }
+
+    func test_givenFolderBalanceOn_whenTheAuditFinishes_thenThePreviewDescribesTheSample() async {
+        let model = SampleBuilderModel.forTesting()
+        model.injectCatalogForTesting(FakeCatalog(folderResponses: [1: .init(result: .success(twoGroups))]))
+        model.folderBalance = .balanced
+
+        model.refreshFolderAudit()
+        XCTAssertTrue(model.isAuditingFolders)
+        await model.waitForPendingFolderAuditForTesting()
+
+        XCTAssertFalse(model.isAuditingFolders)
+        XCTAssertEqual(model.folderBalancePreview?.folderCount, 2)
+        XCTAssertEqual(model.folderBalancePreview?.groups.map(\.name), ["big", "small"])
+    }
+
+    func test_givenAnAuditedFilter_whenSwitchingModesOrSize_thenThePreviewUpdatesWithoutAskingAgain() async {
+        // The counts depend only on the filter; the mode and size are
+        // applied to them in memory.
+        let catalog = FakeCatalog(folderResponses: [1: .init(result: .success(twoGroups))])
+        let model = SampleBuilderModel.forTesting()
+        model.injectCatalogForTesting(catalog)
+        model.folderBalance = .balanced
+        model.refreshFolderAudit()
+        await model.waitForPendingFolderAuditForTesting()
+        let balancedShare = model.folderBalancePreview?.groups.first?.share
+
+        model.folderBalance = .equal
+        model.sampleSize = 1
+        model.refreshFolderAudit()
+        await model.waitForPendingFolderAuditForTesting()
+
+        XCTAssertEqual(catalog.folderCalls, 1)
+        XCTAssertEqual(model.folderBalancePreview?.groups.first?.share, 0.5)
+        XCTAssertNotEqual(balancedShare, 0.5)
+        XCTAssertEqual(model.folderBalancePreview?.expectedFolders, 1)
+    }
+
+    func test_givenTheFilterChangedSinceTheAudit_whenReadingThePreview_thenNothingStaleIsShown() async {
+        let model = SampleBuilderModel.forTesting()
+        model.injectCatalogForTesting(FakeCatalog(folderResponses: [1: .init(result: .success(twoGroups))]))
+        model.folderBalance = .balanced
+        model.refreshFolderAudit()
+        await model.waitForPendingFolderAuditForTesting()
+
+        model.rules.add(.rating)
+
+        XCTAssertNil(model.folderBalancePreview)
+    }
+
+    func test_givenASlowAuditIsSuperseded_whenBothFinish_thenOnlyTheNewerResultIsKept() async {
+        let newer = [FolderPhotoCount(path: "/p/newer/", photos: 5)]
+        let catalog = FakeCatalog(folderResponses: [
+            1: .init(delayNanoseconds: 300_000_000, result: .success(twoGroups)),
+            2: .init(result: .success(newer)),
+        ])
+        let model = SampleBuilderModel.forTesting()
+        model.injectCatalogForTesting(catalog)
+        model.folderBalance = .balanced
+        model.refreshFolderAudit()
+
+        model.rules.add(.rating)
+        model.refreshFolderAudit()
+        await model.waitForPendingFolderAuditForTesting()
+        // Give the superseded first call time to finish and (wrongly) write.
+        try? await Task.sleep(nanoseconds: 400_000_000)
+
+        XCTAssertEqual(model.folderBalancePreview?.groups.map(\.name), ["newer"])
+        XCTAssertFalse(model.isAuditingFolders)
+    }
+
+    func test_givenTheAuditIsRunning_whenTurningFolderBalanceOff_thenItStopsAndNothingIsShown() async {
+        let model = SampleBuilderModel.forTesting()
+        model.injectCatalogForTesting(
+            FakeCatalog(folderResponses: [1: .init(delayNanoseconds: 200_000_000, result: .success(twoGroups))]))
+        model.folderBalance = .balanced
+        model.refreshFolderAudit()
+
+        model.folderBalance = .off
+        model.refreshFolderAudit()
+        try? await Task.sleep(nanoseconds: 300_000_000)
+
+        XCTAssertFalse(model.isAuditingFolders)
+        XCTAssertNil(model.folderBalancePreview)
+    }
+
+    func test_givenTheAuditIsAlreadyRunningForThisFilter_whenRefreshingAgain_thenItIsNotRestarted() async {
+        let catalog = FakeCatalog(folderResponses: [1: .init(delayNanoseconds: 50_000_000, result: .success(twoGroups))])
+        let model = SampleBuilderModel.forTesting()
+        model.injectCatalogForTesting(catalog)
+        model.folderBalance = .balanced
+
+        model.refreshFolderAudit()
+        model.folderBalance = .equal
+        model.refreshFolderAudit()
+        await model.waitForPendingFolderAuditForTesting()
+
+        XCTAssertEqual(catalog.folderCalls, 1)
+        XCTAssertNotNil(model.folderBalancePreview)
+    }
+
+    func test_givenTheAuditFails_whenItFinishes_thenTheErrorIsShownInsteadOfAPreview() async {
+        let model = SampleBuilderModel.forTesting()
+        model.injectCatalogForTesting(FakeCatalog(folderResponses: [1: .init(result: .failure(FakeError()))]))
+        model.folderBalance = .balanced
+
+        model.refreshFolderAudit()
+        await model.waitForPendingFolderAuditForTesting()
+
+        XCTAssertNil(model.folderBalancePreview)
+        XCTAssertEqual(model.folderAuditErrorMessage, "Couldn't check folders: boom")
+        XCTAssertFalse(model.isAuditingFolders)
     }
 
     func test_givenInjectedCatalog_whenRefreshingMatchingCount_thenUpdatesCountAndClearsLoadingFlag() async {

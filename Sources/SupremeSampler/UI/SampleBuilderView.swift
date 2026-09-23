@@ -113,6 +113,10 @@ struct SampleBuilderView: View {
         // doesn't include it.
         .onChange(of: model.currentFilter) {
             model.refreshMatchingCount()
+            model.refreshFolderAudit()
+        }
+        .onChange(of: model.folderBalance) {
+            model.refreshFolderAudit()
         }
     }
 
@@ -133,7 +137,59 @@ struct SampleBuilderView: View {
             Text(folderBalanceExplanation)
                 .font(.caption)
                 .foregroundStyle(.secondary)
+
+            if model.folderBalance != .off {
+                folderBalancePreviewRows
+            }
         }
+    }
+
+    /// The folder audit's result for the chosen mode: how many folders
+    /// the sample would reach, and each top-level group's share, with
+    /// its unbalanced share alongside for comparison.
+    @ViewBuilder
+    private var folderBalancePreviewRows: some View {
+        if model.isAuditingFolders {
+            HStack(spacing: 6) {
+                ProgressView()
+                    .controlSize(.small)
+                Text("Checking folders…")
+                    .foregroundStyle(.secondary)
+            }
+            .font(.caption)
+        } else if let preview = model.folderBalancePreview {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("≈ \(preview.expectedFolders.formatted()) of \(preview.folderCount.formatted()) folders")
+                ForEach(preview.groups, id: \.name) { group in
+                    // The fixed-width "was" column keeps the percentages
+                    // roughly aligned without a full `Grid`.
+                    HStack(spacing: 6) {
+                        Text(group.name)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                        Spacer(minLength: 4)
+                        Text(Self.percent(group.share))
+                            .monospacedDigit()
+                        Text("was \(Self.percent(group.offShare))")
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                            .frame(minWidth: 64, alignment: .trailing)
+                    }
+                }
+            }
+            .font(.caption)
+        } else if let message = model.folderAuditErrorMessage {
+            Text(message)
+                .font(.caption)
+                .foregroundStyle(.red)
+        }
+    }
+
+    /// Whole percents, but never a misleading "0%" for a share that
+    /// exists.
+    static func percent(_ share: Double) -> String {
+        if share > 0 && share < 0.005 { return "<1%" }
+        return share.formatted(.percent.precision(.fractionLength(0)))
     }
 
     private var folderBalanceExplanation: String {

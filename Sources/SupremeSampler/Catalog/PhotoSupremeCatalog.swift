@@ -226,6 +226,28 @@ struct PhotoSupremeCatalog: Sendable {
         }
     }
 
+    /// How many photos matching `filter` each folder holds, with the
+    /// folder's path -- the audit behind the folder balance preview
+    /// (`FolderBalancePreview`). Folders with no matches are left out.
+    /// Counts first and joins the path cache after, so the predicate
+    /// only ever sees `idCatalogItem` (the cache also has a `GUID`
+    /// column). A full scan, like the match count: seconds on the real
+    /// catalog, so the model runs it in the background.
+    func folderPhotoCounts(for filter: SampleFilter) async throws -> [FolderPhotoCount] {
+        try await dbPool.read { db in
+            let request: SQLRequest<Row> = """
+                SELECT fp.FilePath AS path, c.photos AS photos
+                FROM (
+                    SELECT PathGUID, COUNT(*) AS photos FROM idCatalogItem
+                    WHERE \(Self.predicate(for: filter))
+                    GROUP BY PathGUID
+                ) c
+                LEFT JOIN idCache_FilePath fp ON fp.FilePathGUID = c.PathGUID
+                """
+            return try request.fetchAll(db).map { FolderPhotoCount(path: $0["path"], photos: $0["photos"]) }
+        }
+    }
+
     /// Every distinct color label with its photo count, most common first
     /// (ties by value), NULL folded into `""` ("no label"). Uses the
     /// `idLabel` index; ~0.2s on the real catalog.

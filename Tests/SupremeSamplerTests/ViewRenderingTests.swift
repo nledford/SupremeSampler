@@ -239,6 +239,25 @@ final class ViewRenderingTests: XCTestCase {
         }
     }
 
+    func test_givenEachFolderAuditState_whenBuildingSampleBuilderView_thenBodyDoesNotCrash() async {
+        let folders = [FolderPhotoCount(path: "/p/a/", photos: 5), FolderPhotoCount(path: "/p/b/", photos: 1)]
+        let model = SampleBuilderModel.forTesting()
+        model.injectCatalogForTesting(FakeCatalogForViewTests(folders: folders))
+        model.folderBalance = .balanced
+
+        model.refreshFolderAudit()
+        _ = SampleBuilderView(model: model).body  // checking folders
+        await model.waitForPendingFolderAuditForTesting()
+        XCTAssertNotNil(model.folderBalancePreview)
+        _ = SampleBuilderView(model: model).body  // the preview
+    }
+
+    func test_givenShares_whenFormattingPercents_thenATinyShareIsNotShownAsZero() {
+        XCTAssertEqual(SampleBuilderView.percent(0.806), "81%")
+        XCTAssertEqual(SampleBuilderView.percent(0.001), "<1%")
+        XCTAssertEqual(SampleBuilderView.percent(0), "0%")
+    }
+
     func test_givenCountingMatches_whenBuildingSampleBuilderView_thenBodyDoesNotCrash() {
         // isCountingMatches is set synchronously at the start of
         // refreshMatchingCount(), before the query itself runs, so this
@@ -352,6 +371,7 @@ private struct FakeCatalogForViewTests: SampleBuilderCatalog {
     var propTree: [CatalogPropNode] = []
     var matchCount: Int = 0
     var matchDelayNanoseconds: UInt64 = 0
+    var folders: [FolderPhotoCount] = []
 
     func listPropTree() async throws -> [CatalogPropNode] { propTree }
 
@@ -361,4 +381,6 @@ private struct FakeCatalogForViewTests: SampleBuilderCatalog {
         }
         return matchCount
     }
+
+    func folderPhotoCounts(for filter: SampleFilter) async throws -> [FolderPhotoCount] { folders }
 }

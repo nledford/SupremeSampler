@@ -122,6 +122,21 @@ rather than only reasoned about by inspection — confirmed the test
 actually catches the bug class by temporarily reintroducing the naive
 `defer` version and watching it fail, documented in that test's commit.
 
+**The folder balance preview** (`refreshFolderAudit`) follows the same
+cancel-and-restart pattern: while balance is on, it fetches per-folder
+counts for the current filter (`PhotoSupremeCatalog.folderPhotoCounts`,
+a full scan, ~5s on the real catalog) and keeps them with the filter
+they were counted for. `FolderBalancePreview` (pure, `Catalog/`) turns
+them into the expected folder count and per-group shares for whichever
+mode and size are chosen, so switching modes costs no query. Groups are
+the folders just below the shared root, opening up any group with 99%+
+of the photos (a tiny `videos` tree beside `photos` otherwise hid
+everything, seen in the running app 2026-09-23). The fake's delay in
+`SampleBuilderModelTests` deliberately ignores cancellation: with
+`Task.sleep`, a superseded audit threw before reaching the write the
+guard protects, and removing the guard left the test passing. Checked
+by hand against the real catalog: Balanced raised the largest group's share and cut the chunked archive group's, matching the 2026-09-23 survey.
+
 `openCatalog` does *not* have the same tracked-Task/cancel guard --
 currently safe only because `CatalogPickerView` structurally can't call
 it twice while one is in flight (its button becomes a spinner, and the

@@ -588,6 +588,41 @@ final class PhotoSupremeCatalogTests: XCTestCase {
             for: SampleFilter(root: RuleGroup(match: .all, rules: [.label(LabelFilter(labels: labels, mode: mode))])))
     }
 
+    // MARK: - Folder audit (for the folder balance preview)
+
+    func test_givenAFilter_whenCountingPhotosPerFolder_thenEachFolderWithMatchesComesWithItsPath() async throws {
+        try makeFixture([
+            FixtureItem(rating: 3, path: "/Volumes/Test/a/1.jpg"),
+            FixtureItem(rating: 3, path: "/Volumes/Test/a/2.jpg"),
+            FixtureItem(rating: 0, path: "/Volumes/Test/a/3.jpg"),
+            FixtureItem(rating: 5, path: "/Volumes/Test/b/1.jpg"),
+            FixtureItem(rating: 0, path: "/Volumes/Test/c/1.jpg"),
+        ])
+
+        let folders = try await PhotoSupremeCatalog(path: fixturePath)
+            .folderPhotoCounts(for: SampleFilter(rating: .atLeast(3)))
+
+        XCTAssertEqual(
+            folders.sorted { ($0.path ?? "") < ($1.path ?? "") },
+            [
+                FolderPhotoCount(path: "/Volumes/Test/a/", photos: 2),
+                FolderPhotoCount(path: "/Volumes/Test/b/", photos: 1),
+            ],
+            "counts only matching photos, and leaves out folders with none")
+    }
+
+    func test_givenAFolderMissingFromThePathCache_whenCountingPhotosPerFolder_thenItStillCountsWithNoPath() async throws {
+        try makeFixture([FixtureItem(path: "/Volumes/Test/a/1.jpg"), FixtureItem(path: "/Volumes/Test/gone/1.jpg")])
+        let dbQueue = try DatabaseQueue(path: fixturePath)
+        try await dbQueue.write { db in
+            try db.execute(sql: "DELETE FROM idCache_FilePath WHERE FilePath = '/Volumes/Test/gone/'")
+        }
+
+        let folders = try await PhotoSupremeCatalog(path: fixturePath).folderPhotoCounts(for: SampleFilter())
+
+        XCTAssertEqual(Set(folders.map(\.path)), ["/Volumes/Test/a/", nil])
+    }
+
     func test_givenACatalog_whenListingLabels_thenEachStoredValueComesWithItsCountMostCommonFirst() async throws {
         try makeLabelFixture()
 

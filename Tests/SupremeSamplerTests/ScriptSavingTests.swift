@@ -25,6 +25,7 @@ final class ScriptSavingTests: XCTestCase {
             try await Task.sleep(nanoseconds: delayNanoseconds)
             return 42
         }
+        func folderPhotoCounts(for filter: SampleFilter) async throws -> [FolderPhotoCount] { [] }
     }
 
     /// A model with a catalog open and the pre-flight count finished --

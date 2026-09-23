@@ -145,6 +145,24 @@ final class SampleBuilderModel {
     /// by default, so a script is the plain random sample unless asked.
     var folderBalance: FolderBalance = .off
 
+    // The folder audit: per-folder counts for one filter, fetched in the
+    // background while folder balance is on. Kept with the filter they
+    // were counted for, so a changed filter never shows stale numbers.
+    private var folderCounts: (filter: SampleFilter, folders: [FolderPhotoCount])?
+    private var folderAuditTask: Task<Void, Never>?
+    private var folderAuditFilter: SampleFilter?
+    private(set) var isAuditingFolders = false
+    private(set) var folderAuditErrorMessage: String?
+
+    /// What the chosen folder balance would do to a sample of the
+    /// current filter -- `nil` while it's off, or until the audit for
+    /// this filter has finished. Changing the mode or sample size
+    /// recomputes it from the same counts, without querying again.
+    var folderBalancePreview: FolderBalancePreview? {
+        guard folderBalance != .off, let folderCounts, folderCounts.filter == currentFilter else { return nil }
+        return FolderBalancePreview(folders: folderCounts.folders, balance: folderBalance, sampleSize: sampleSize)
+    }
+
     /// Everything in the rule builder: the root "Match all/any/none of"
     /// group and its (possibly nested) rules. Starts empty, which
     /// matches the whole catalog.
@@ -208,7 +226,9 @@ final class SampleBuilderModel {
                 catalog = opened
                 catalogPath = path
                 catalogStore.savePath(path)
+                folderCounts = nil
                 refreshMatchingCount()
+                refreshFolderAudit()
                 loadFileTypes(from: opened)
             } catch {
                 catalog = nil
@@ -359,6 +379,44 @@ final class SampleBuilderModel {
         }
     }
 
+    /// Counts matching photos per folder for the folder balance preview,
+    /// in the background -- a full scan, seconds on the real catalog.
+    /// Called by the view when the filter or the folder balance changes.
+    /// Does nothing while folder balance is off (and stops an audit in
+    /// progress), when the counts for this filter are already in hand,
+    /// or when they're already being fetched. Otherwise cancels any
+    /// older audit and starts one, with the same "only an uncancelled
+    /// task writes" guard as `refreshMatchingCount`.
+    func refreshFolderAudit() {
+        guard folderBalance != .off, let catalog else {
+            folderAuditTask?.cancel()
+            folderAuditFilter = nil
+            isAuditingFolders = false
+            return
+        }
+        let filter = currentFilter
+        if folderCounts?.filter == filter { return }
+        if isAuditingFolders && folderAuditFilter == filter { return }
+
+        folderAuditTask?.cancel()
+        folderAuditFilter = filter
+        isAuditingFolders = true
+        folderAuditErrorMessage = nil
+        folderAuditTask = Task {
+            do {
+                let folders = try await catalog.folderPhotoCounts(for: filter)
+                guard !Task.isCancelled else { return }
+                folderCounts = (filter, folders)
+            } catch {
+                guard !Task.isCancelled else { return }
+                folderCounts = nil
+                folderAuditErrorMessage = "Couldn't check folders: \(error.localizedDescription)"
+            }
+            folderAuditFilter = nil
+            isAuditingFolders = false
+        }
+    }
+
     /// Test seam: substitutes a catalog conforming to
     /// `SampleBuilderCatalog` without going through the real file-
     /// opening path in `openCatalog`. Plain `internal` (Swift's
@@ -378,6 +436,11 @@ final class SampleBuilderModel {
     /// instead of guessing how long to sleep.
     func waitForPendingMatchCountForTesting() async {
         await matchCountTask?.value
+    }
+
+    /// Test seam: awaits the folder audit, if one is running.
+    func waitForPendingFolderAuditForTesting() async {
+        await folderAuditTask?.value
     }
 
     /// Test seam: awaits the background file-type listing, if one is
