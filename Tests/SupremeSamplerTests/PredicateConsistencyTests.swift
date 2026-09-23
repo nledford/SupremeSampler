@@ -54,11 +54,16 @@ final class PredicateConsistencyTests: XCTestCase {
             try db.execute(
                 sql: """
                     CREATE TABLE idCatalogItemDefinition (
-                        GUID TEXT NOT NULL,
-                        CatalogItemGUID TEXT NOT NULL,
+                        GUID TEXT,
+                        CatalogItemGUID TEXT,
                         PRIMARY KEY (GUID, CatalogItemGUID)
                     )
                     """)
+            // Nullable columns plus one NULL-photo row, matching what the
+            // real schema permits: guards both renderers against the
+            // `NOT IN` + NULL trap.
+            try db.execute(
+                sql: "INSERT INTO idCatalogItemDefinition (GUID, CatalogItemGUID) VALUES ('catA', NULL)")
             for item in items {
                 try db.execute(
                     sql: "INSERT INTO idCatalogItem (GUID, Rating) VALUES (?, ?)",

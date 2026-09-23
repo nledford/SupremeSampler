@@ -180,7 +180,7 @@ final class RandomSampleScriptGeneratorTests: XCTestCase {
         let filter = SampleFilter(category: CategoryFilter(propGUIDs: ["O'Brien"], mode: .any))
         let script = RandomSampleScriptGenerator.generate(sampleSize: 100, filter: filter, generatedAt: fixedDate)
 
-        XCTAssertTrue(script.contains("d.GUID IN (''O''''Brien''))"))
+        XCTAssertTrue(script.contains("d.GUID IN (''O''''Brien'')"))
     }
 
     // MARK: - Header

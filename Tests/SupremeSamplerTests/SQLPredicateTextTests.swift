@@ -23,27 +23,28 @@ final class SQLPredicateTextTests: XCTestCase {
 
     // MARK: - Category
 
-    func test_givenCategoryModeAny_whenRendering_thenRendersExistsClause() {
+    func test_givenCategoryModeAny_whenRendering_thenRendersInSubquery() {
         let filter = SampleFilter(category: CategoryFilter(propGUIDs: ["A1", "B2"], mode: .any))
         XCTAssertEqual(
             SQLPredicateText.render(filter),
-            "EXISTS (SELECT 1 FROM idCatalogItemDefinition d WHERE d.CatalogItemGUID = idCatalogItem.GUID AND d.GUID IN ('A1', 'B2'))"
+            "idCatalogItem.GUID IN (SELECT d.CatalogItemGUID FROM idCatalogItemDefinition d WHERE d.GUID IN ('A1', 'B2') AND d.CatalogItemGUID IS NOT NULL)"
         )
     }
 
-    func test_givenCategoryModeNone_whenRendering_thenRendersNotExistsClause() {
+    func test_givenCategoryModeNone_whenRendering_thenRendersNullSafeNotInSubquery() {
         let filter = SampleFilter(category: CategoryFilter(propGUIDs: ["A1"], mode: .none))
         XCTAssertEqual(
             SQLPredicateText.render(filter),
-            "NOT EXISTS (SELECT 1 FROM idCatalogItemDefinition d WHERE d.CatalogItemGUID = idCatalogItem.GUID AND d.GUID IN ('A1'))"
+            "idCatalogItem.GUID NOT IN (SELECT d.CatalogItemGUID FROM idCatalogItemDefinition d WHERE d.GUID IN ('A1') AND d.CatalogItemGUID IS NOT NULL)"
         )
     }
 
-    func test_givenCategoryModeAll_whenRendering_thenRendersCountDistinctClause() {
+    func test_givenCategoryModeAll_whenRendering_thenRendersOneMembershipTestPerBranch() {
         let filter = SampleFilter(category: CategoryFilter(propGUIDs: ["A1", "B2"], mode: .all))
         XCTAssertEqual(
             SQLPredicateText.render(filter),
-            "(SELECT COUNT(DISTINCT d.GUID) FROM idCatalogItemDefinition d WHERE d.CatalogItemGUID = idCatalogItem.GUID AND d.GUID IN ('A1', 'B2')) = 2"
+            "(idCatalogItem.GUID IN (SELECT d.CatalogItemGUID FROM idCatalogItemDefinition d WHERE d.GUID IN ('A1') AND d.CatalogItemGUID IS NOT NULL)"
+                + " AND idCatalogItem.GUID IN (SELECT d.CatalogItemGUID FROM idCatalogItemDefinition d WHERE d.GUID IN ('B2') AND d.CatalogItemGUID IS NOT NULL))"
         )
     }
 
@@ -68,7 +69,7 @@ final class SQLPredicateTextTests: XCTestCase {
         )
         XCTAssertEqual(
             SQLPredicateText.render(filter),
-            "Rating >= 3 AND EXISTS (SELECT 1 FROM idCatalogItemDefinition d WHERE d.CatalogItemGUID = idCatalogItem.GUID AND d.GUID IN ('A1'))"
+            "Rating >= 3 AND idCatalogItem.GUID IN (SELECT d.CatalogItemGUID FROM idCatalogItemDefinition d WHERE d.GUID IN ('A1') AND d.CatalogItemGUID IS NOT NULL)"
         )
     }
 
@@ -81,7 +82,7 @@ final class SQLPredicateTextTests: XCTestCase {
         let filter = SampleFilter(category: CategoryFilter(propGUIDs: ["O'Brien"], mode: .any))
         XCTAssertEqual(
             SQLPredicateText.render(filter),
-            "EXISTS (SELECT 1 FROM idCatalogItemDefinition d WHERE d.CatalogItemGUID = idCatalogItem.GUID AND d.GUID IN ('O''Brien'))"
+            "idCatalogItem.GUID IN (SELECT d.CatalogItemGUID FROM idCatalogItemDefinition d WHERE d.GUID IN ('O''Brien') AND d.CatalogItemGUID IS NOT NULL)"
         )
     }
 }

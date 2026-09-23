@@ -292,10 +292,8 @@ struct PhotoSupremeCatalog: Sendable {
 
     /// `idCatalogItemDefinition` is the many-to-many join table between
     /// photos and props (categories/keywords); see `docs/relationships.md`.
-    /// Each mode below is a correlated subquery against it, correlated on
-    /// `idCatalogItem.GUID` -- the outer table is referenced by its bare
-    /// name rather than an alias, which SQLite allows as long as the
-    /// outer FROM clause doesn't itself introduce an alias.
+    /// Each mode below tests the photo's GUID for membership in the set
+    /// of photos carrying some prop from a list.
     private static func categoryPredicate(_ category: CategoryFilter) -> SQL {
         guard !category.propGUIDs.isEmpty else {
             // Vacuous cases: "has any of zero categories" can never be
@@ -313,27 +311,40 @@ struct PhotoSupremeCatalog: Sendable {
 
         switch category.mode {
         case .any:
-            return """
-                EXISTS (
-                    SELECT 1 FROM idCatalogItemDefinition d
-                    WHERE d.CatalogItemGUID = idCatalogItem.GUID
-                      AND d.GUID IN \(category.propGUIDs)
-                )
-                """
+            return "idCatalogItem.GUID IN \(photosWithAnyPropSubquery(category.propGUIDs))"
         case .none:
-            return """
-                NOT EXISTS (
-                    SELECT 1 FROM idCatalogItemDefinition d
-                    WHERE d.CatalogItemGUID = idCatalogItem.GUID
-                      AND d.GUID IN \(category.propGUIDs)
-                )
-                """
+            return "idCatalogItem.GUID NOT IN \(photosWithAnyPropSubquery(category.propGUIDs))"
         case .all:
-            return """
-                (SELECT COUNT(DISTINCT d.GUID) FROM idCatalogItemDefinition d
-                 WHERE d.CatalogItemGUID = idCatalogItem.GUID
-                   AND d.GUID IN \(category.propGUIDs)) = \(category.propGUIDs.count)
-                """
+            // One membership test per GUID. `SQL` values join like
+            // strings but stay parameterized.
+            let perGUID = category.propGUIDs.map { guid -> SQL in
+                "idCatalogItem.GUID IN \(photosWithAnyPropSubquery([guid]))"
+            }
+            return "(\(perGUID.joined(separator: " AND ")))"
         }
+    }
+
+    /// The GUIDs of photos carrying any of `propGUIDs`.
+    ///
+    /// Deliberately an uncorrelated `IN (SELECT ...)` rather than a
+    /// correlated `EXISTS (... WHERE d.CatalogItemGUID = idCatalogItem.GUID)`.
+    /// The correlated form scans all millions of photos and probes the index
+    /// once per photo per GUID, so its cost grows with the list length.
+    /// Measured on the real catalog (2026-09-23) with multi-keyword
+    /// lists: 15.7s -> 0.23s and 10.6s -> 1.1s, same counts. This form
+    /// is driven from `idCatalogItemDefinition`'s index on `GUID` instead.
+    ///
+    /// `IS NOT NULL` because the real schema doesn't declare
+    /// `CatalogItemGUID` NOT NULL, and a single NULL in a `NOT IN` list
+    /// makes the test unknown for every row -- "none of" would silently
+    /// match nothing.
+    private static func photosWithAnyPropSubquery(_ propGUIDs: [String]) -> SQL {
+        """
+        (
+            SELECT d.CatalogItemGUID FROM idCatalogItemDefinition d
+            WHERE d.GUID IN \(propGUIDs)
+              AND d.CatalogItemGUID IS NOT NULL
+        )
+        """
     }
 }

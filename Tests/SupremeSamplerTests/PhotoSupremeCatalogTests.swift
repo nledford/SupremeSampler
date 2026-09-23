@@ -64,8 +64,8 @@ final class PhotoSupremeCatalogTests: XCTestCase {
             try db.execute(
                 sql: """
                     CREATE TABLE idCatalogItemDefinition (
-                        GUID TEXT NOT NULL,
-                        CatalogItemGUID TEXT NOT NULL,
+                        GUID TEXT,
+                        CatalogItemGUID TEXT,
                         PRIMARY KEY (GUID, CatalogItemGUID)
                     )
                     """)
@@ -265,6 +265,23 @@ final class PhotoSupremeCatalogTests: XCTestCase {
             for: SampleFilter(category: CategoryFilter(propGUIDs: [], mode: .none)))
 
         XCTAssertEqual(count, 5, "\"has none of no categories\" is vacuously true")
+    }
+
+    func test_givenAnAssignmentRowWithNoPhotoGUID_whenCountingNoneOfACategory_thenOtherPhotosStillMatch() async throws {
+        // The real schema doesn't declare CatalogItemGUID NOT NULL (none
+        // are NULL today). A single NULL must not make "none of" match
+        // nothing -- the classic SQL `NOT IN` + NULL trap.
+        try makeCategoryFixture()
+        let dbQueue = try DatabaseQueue(path: fixturePath)
+        try await dbQueue.write { db in
+            try db.execute(sql: "INSERT INTO idCatalogItemDefinition (GUID, CatalogItemGUID) VALUES ('catA', NULL)")
+        }
+        let catalog = try PhotoSupremeCatalog(path: fixturePath)
+
+        let count = try await catalog.matchingItemCount(
+            for: SampleFilter(category: CategoryFilter(propGUIDs: ["catA"], mode: .none)))
+
+        XCTAssertEqual(count, 2, "only \"none\" and \"b-only\" lack catA")
     }
 
     // MARK: - matchingItemCount: combined rating + category

@@ -29,7 +29,7 @@ import Foundation
 enum SQLPredicateText {
     /// `nil` when `filter` is unconstrained (no WHERE clause needed at
     /// all); otherwise the combined boolean expression, e.g.
-    /// `"Rating >= 3"` or `"Rating >= 3 AND EXISTS (...)"`.
+    /// `"Rating >= 3"` or `"Rating >= 3 AND idCatalogItem.GUID IN (...)"`.
     static func render(_ filter: SampleFilter) -> String? {
         var clauses: [String] = []
         if let rating = filter.rating {
@@ -62,23 +62,26 @@ enum SQLPredicateText {
             }
         }
 
-        let guidList = category.propGUIDs.map(sqlStringLiteral).joined(separator: ", ")
-
         switch category.mode {
         case .any:
-            return
-                "EXISTS (SELECT 1 FROM idCatalogItemDefinition d "
-                + "WHERE d.CatalogItemGUID = idCatalogItem.GUID AND d.GUID IN (\(guidList)))"
+            return "idCatalogItem.GUID IN " + photosWithAnyPropSubquery(category.propGUIDs)
         case .none:
-            return
-                "NOT EXISTS (SELECT 1 FROM idCatalogItemDefinition d "
-                + "WHERE d.CatalogItemGUID = idCatalogItem.GUID AND d.GUID IN (\(guidList)))"
+            return "idCatalogItem.GUID NOT IN " + photosWithAnyPropSubquery(category.propGUIDs)
         case .all:
-            return
-                "(SELECT COUNT(DISTINCT d.GUID) FROM idCatalogItemDefinition d "
-                + "WHERE d.CatalogItemGUID = idCatalogItem.GUID AND d.GUID IN (\(guidList))) "
-                + "= \(category.propGUIDs.count)"
+            // One membership test per GUID.
+            let perGUID = category.propGUIDs.map {
+                "idCatalogItem.GUID IN " + photosWithAnyPropSubquery([$0])
+            }
+            return "(" + perGUID.joined(separator: " AND ") + ")"
         }
+    }
+
+    /// Same shape, and same reasons (index-driven, NULL-safe `NOT IN`),
+    /// as `PhotoSupremeCatalog.photosWithAnyPropSubquery`.
+    private static func photosWithAnyPropSubquery(_ propGUIDs: [String]) -> String {
+        let guidList = propGUIDs.map(sqlStringLiteral).joined(separator: ", ")
+        return "(SELECT d.CatalogItemGUID FROM idCatalogItemDefinition d "
+            + "WHERE d.GUID IN (\(guidList)) AND d.CatalogItemGUID IS NOT NULL)"
     }
 
     /// SQL-level string-literal escaping for one GUID value -- distinct

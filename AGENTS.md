@@ -107,6 +107,14 @@ cmd/shift-click natively via `selection:`); **no third-party tree-view
 package is needed.** See `SampleBuilderView`'s `List(model.propTree,
 children: \.childrenOrNil, ...)`.
 
+Both predicate renderers express category rules as an uncorrelated
+`idCatalogItem.GUID [NOT] IN (SELECT CatalogItemGUID ...)` rather
+than a correlated `EXISTS` — the `EXISTS` form scans every photo and
+its cost grows with the GUID list length (15s vs 0.2s measured on
+the real catalog); see `PhotoSupremeCatalog.photosWithAnyPropSubquery`.
+The subquery filters `CatalogItemGUID IS NOT NULL`: the real schema
+allows NULL there, and one NULL would make `NOT IN` match nothing.
+
 The recursive-nesting approach itself was informed by a `WITH RECURSIVE`
 SQL CTE found in an archived Rust project the repo owner previously wrote
 against this same catalog schema
