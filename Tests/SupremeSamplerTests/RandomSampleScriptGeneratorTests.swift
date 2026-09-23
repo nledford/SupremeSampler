@@ -1,3 +1,4 @@
+import GRDB
 import XCTest
 
 @testable import SupremeSampler
@@ -279,6 +280,84 @@ final class RandomSampleScriptGeneratorTests: XCTestCase {
         XCTAssertTrue(header(for: [.pendingDeletion(true)]).contains("Pending deletion: only"))
     }
 
+    // MARK: - Folder balance
+
+    func test_givenFolderBalanceOff_whenGenerating_thenTheScriptIsThePlainSampler() {
+        let off = RandomSampleScriptGenerator.generate(sampleSize: 100, folderBalance: .off, generatedAt: fixedDate)
+
+        XCTAssertEqual(off, RandomSampleScriptGenerator.generate(sampleSize: 100, generatedAt: fixedDate))
+        XCTAssertFalse(off.contains("BalancedItemGUIDs"))
+        XCTAssertFalse(off.contains("Folder balance"))
+    }
+
+    func test_givenFolderBalanceOn_whenGenerating_thenTheSampleComesFromTheBalancedDraw() {
+        for balance in [FolderBalance.balanced, .equal] {
+            let script = RandomSampleScriptGenerator.generate(sampleSize: 100, folderBalance: balance, generatedAt: fixedDate)
+
+            XCTAssertTrue(script.contains("function BalancedItemGUIDs(ACount: Integer): TStringList;"))
+            XCTAssertTrue(script.contains("  AGUIDs := BalancedItemGUIDs(SAMPLE_SIZE);"))
+            XCTAssertFalse(script.contains("  AGUIDs := RandomItemGUIDs(SAMPLE_SIZE);"))
+            // The plain sampler stays, to top up folders too small for
+            // their share.
+            XCTAssertTrue(script.contains("    ATopUp := RandomItemGUIDs(ACount);"))
+        }
+    }
+
+    func test_givenFolderBalanceOn_whenGenerating_thenTheHeaderSaysWhichMode() {
+        let balanced = RandomSampleScriptGenerator.generate(sampleSize: 100, folderBalance: .balanced, generatedAt: fixedDate)
+        let equal = RandomSampleScriptGenerator.generate(sampleSize: 100, folderBalance: .equal, generatedAt: fixedDate)
+
+        XCTAssertTrue(balanced.contains("  Folder balance: Balanced (folders weighted by the square root of their size)"))
+        XCTAssertTrue(equal.contains("  Folder balance: Equal (every folder equally likely)"))
+    }
+
+    /// Pulls the balanced query out of the script exactly as Pascal would
+    /// build it -- `'before' + IntToStr(ACount) + 'after'` with `''`
+    /// meaning one quote -- so the test below runs the script's own text,
+    /// escaping included, rather than `FolderBalanceSQL` directly.
+    private func balancedQuery(in script: String, count: Int) throws -> String {
+        let lines = script.split(separator: "\n").map { $0.trimmingCharacters(in: .whitespaces) }
+        let index = try XCTUnwrap(lines.firstIndex { $0.hasPrefix("IntToStr(ACount) + '") })
+        let before = lines[index - 1]
+        let after = lines[index]
+        XCTAssertTrue(before.hasPrefix("'") && before.hasSuffix("' +"), before)
+        XCTAssertTrue(after.hasSuffix("';"), after)
+        func unquote(_ literal: Substring) -> String {
+            literal.replacingOccurrences(of: "''", with: "'")
+        }
+        return unquote(before.dropFirst().dropLast(3)) + String(count)
+            + unquote(after.dropFirst("IntToStr(ACount) + '".count).dropLast(2))
+    }
+
+    func test_givenFolderBalanceWithAQuotedFilter_whenTheScriptsQueryRuns_thenItSamplesTheMatchingFolders() throws {
+        let dbQueue = try DatabaseQueue()
+        try dbQueue.write { db in
+            try db.execute(sql: "CREATE TABLE idCatalogItem (GUID TEXT, Rating INTEGER, PathGUID TEXT, FileName TEXT)")
+            try db.execute(sql: "CREATE TABLE idCache_FilePath (FilePathGUID TEXT, FilePath TEXT)")
+            try db.execute(sql: "CREATE TABLE idCatalogItemDefinition (GUID TEXT, CatalogItemGUID TEXT)")
+            for folder in ["a", "b", "c"] {
+                try db.execute(sql: "INSERT INTO idCache_FilePath VALUES (?, ?)", arguments: [folder, "/O'Brien/\(folder)/"])
+                for index in 0..<5 {
+                    try db.execute(
+                        sql: "INSERT INTO idCatalogItem VALUES (?, 0, ?, ?)",
+                        arguments: ["\(folder)\(index)", folder, "IMG_\(index).jpg"])
+                }
+            }
+        }
+        // The apostrophe goes through both escaping layers: SQL, then
+        // the Pascal literal around the SQL.
+        let filter = SampleFilter(
+            root: RuleGroup(
+                match: .all,
+                rules: [.path(PathFilter(kind: .contains, text: "O'Brien/")), .path(PathFilter(kind: .contains, text: "/c/", negated: true))]))
+        let script = RandomSampleScriptGenerator.generate(
+            sampleSize: 100, filter: filter, folderBalance: .equal, generatedAt: fixedDate)
+
+        let guids = try dbQueue.read { try String.fetchAll($0, sql: try self.balancedQuery(in: script, count: 2)) }
+
+        XCTAssertEqual(Set(guids.map { $0.prefix(1) }), ["a", "b"])
+    }
+
     // MARK: - Header
 
     func test_givenFilter_whenGenerating_thenHeaderSummarizesIt() {
@@ -325,6 +404,32 @@ final class RandomSampleScriptGeneratorTests: XCTestCase {
             .joined(separator: "\n")
     }
 
+    /// Filters with the shapes most likely to break the script's syntax
+    /// (quotes, OR groups, "none of"), each generated under every folder
+    /// balance mode.
+    private func scriptsForRepresentativeFilters() -> [(SampleFilter, String)] {
+        let filters = [
+            SampleFilter(),
+            SampleFilter(rating: .exactly(5)),
+            SampleFilter(category: CategoryFilter(propGUIDs: ["A", "B", "C"], mode: .all)),
+            SampleFilter(rating: .atMost(2), category: CategoryFilter(propGUIDs: ["A"], mode: .none)),
+            SampleFilter(root: RuleGroup(match: .any, rules: [.path(PathFilter(kind: .contains, text: "O'B_%’"))])),
+            SampleFilter(
+                root: RuleGroup(
+                    match: .none,
+                    rules: [
+                        .rating(.exactly(1)),
+                        .group(RuleGroup(match: .any, rules: [.category(CategoryFilter(propGUIDs: ["O'B"], mode: .all))])),
+                    ])),
+        ]
+        return FolderBalance.allCases.flatMap { balance in
+            filters.map { filter in
+                (filter, RandomSampleScriptGenerator.generate(
+                    sampleSize: 100, filter: filter, folderBalance: balance, generatedAt: fixedDate))
+            }
+        }
+    }
+
     // MARK: - Interpreter quirk: no two adjacent string literals joined by `+`
 
     /// Confirmed by hand in Script Studio (see AGENTS.md): this
@@ -339,21 +444,7 @@ final class RandomSampleScriptGeneratorTests: XCTestCase {
     /// check for the *presence* of the merged text, not the *absence*
     /// of the old, broken shape).
     func test_givenAnyFilter_whenGenerating_thenNeverJoinsTwoAdjacentStringLiteralsWithPlus() {
-        for filter in [
-            SampleFilter(),
-            SampleFilter(rating: .exactly(5)),
-            SampleFilter(category: CategoryFilter(propGUIDs: ["A", "B", "C"], mode: .all)),
-            SampleFilter(rating: .atMost(2), category: CategoryFilter(propGUIDs: ["A"], mode: .none)),
-            SampleFilter(root: RuleGroup(match: .any, rules: [.path(PathFilter(kind: .contains, text: "O'B_%’"))])),
-            SampleFilter(
-                root: RuleGroup(
-                    match: .none,
-                    rules: [
-                        .rating(.exactly(1)),
-                        .group(RuleGroup(match: .any, rules: [.category(CategoryFilter(propGUIDs: ["O'B"], mode: .all))])),
-                    ])),
-        ] {
-            let script = RandomSampleScriptGenerator.generate(sampleSize: 100, filter: filter, generatedAt: fixedDate)
+        for (filter, script) in scriptsForRepresentativeFilters() {
             let lines = script.split(separator: "\n", omittingEmptySubsequences: false).map {
                 $0.trimmingCharacters(in: .whitespaces)
             }
@@ -372,21 +463,7 @@ final class RandomSampleScriptGeneratorTests: XCTestCase {
     }
 
     func test_givenAnyFilter_whenGenerating_thenQuotesAndParensAreBalanced() {
-        for filter in [
-            SampleFilter(),
-            SampleFilter(rating: .exactly(5)),
-            SampleFilter(category: CategoryFilter(propGUIDs: ["A", "B", "C"], mode: .all)),
-            SampleFilter(rating: .atMost(2), category: CategoryFilter(propGUIDs: ["A"], mode: .none)),
-            SampleFilter(root: RuleGroup(match: .any, rules: [.path(PathFilter(kind: .contains, text: "O'B_%’"))])),
-            SampleFilter(
-                root: RuleGroup(
-                    match: .none,
-                    rules: [
-                        .rating(.exactly(1)),
-                        .group(RuleGroup(match: .any, rules: [.category(CategoryFilter(propGUIDs: ["O'B"], mode: .all))])),
-                    ])),
-        ] {
-            let script = RandomSampleScriptGenerator.generate(sampleSize: 100, filter: filter, generatedAt: fixedDate)
+        for (filter, script) in scriptsForRepresentativeFilters() {
             let code = strippingComments(script)
 
             XCTAssertEqual(

@@ -395,6 +395,23 @@ touching it:
   zero lines and pass: the working copy had been re-saved with CRLF, so no
   line equalled `const`. It now also fails if it compares almost nothing.
 
+- **Folder balance** (`FolderBalance`, `FolderBalanceSQL`): Off / Balanced
+  / Equal weight each folder (`idCatalogItem.PathGUID`, the photo's own
+  folder) by `photos^1`, `photos^0.5` or `photos^0`. Off emits exactly
+  the old script. The other two add `BalancedItemGUIDs`, which runs *one*
+  SQL statement (CTEs, systematic sampling over folders in random
+  order, then `ROW_NUMBER() OVER (PARTITION BY PathGUID ORDER BY
+  random())` within each one) and tops up any shortfall with the plain
+  `RandomItemGUIDs`. Keeping the logic in SQL keeps the Pascal to a
+  dataset loop. It needs window functions, `AS MATERIALIZED` and `sqrt`.
+  Photo Supreme bundles `libsqlite3.0.dylib` **3.35.5 with
+  `ENABLE_MATH_FUNCTIONS`** (read from the dylib's strings, 2026-09-23),
+  so all three should be available — **not yet run in Script Studio.**
+  If it fails there, suspect the CTE features before the Pascal. About
+  9s for 10,000 photos on the real catalog via the `sqlite3` CLI;
+  `FolderBalanceSQLTests` runs the SQL against a fixture.
+  Why folders and these presets: see the survey in `FolderBalance`'s doc
+  comment.
 - **Text in generated SQL is pure ASCII.** `SQLStringLiteral` renders
   printable-ASCII runs as quoted literals and everything else as
   SQLite `char(code, ...)` joined with `||` (`'Lil' || char(8217)`).

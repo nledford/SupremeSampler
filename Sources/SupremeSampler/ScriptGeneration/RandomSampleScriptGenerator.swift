@@ -22,15 +22,22 @@ import Foundation
 /// correctness (see `RandomSampleScriptGeneratorTests` for the
 /// regression test against transcription drift) instead of re-risking
 /// every interpreter quirk documented in AGENTS.md a second time.
+///
+/// With folder balance on, one more function is added --
+/// `BalancedItemGUIDs`, whose single query is `FolderBalanceSQL` -- and
+/// `BuildRandomItems` calls it instead. Everything transcribed stays as
+/// it is: with balance off the output is unchanged, and the plain
+/// sampler still tops up a balanced sample that comes up short.
 enum RandomSampleScriptGenerator {
     static func generate(
         sampleSize: Int,
         filter: SampleFilter = SampleFilter(),
+        folderBalance: FolderBalance = .off,
         generatedAt: Date = Date()
     ) -> String {
         let predicate = SQLPredicateText.render(filter)
 
-        var lines: [String] = headerLines(filter: filter, generatedAt: generatedAt)
+        var lines: [String] = headerLines(filter: filter, folderBalance: folderBalance, generatedAt: generatedAt)
         lines += [
             "",
             "const",
@@ -121,6 +128,11 @@ enum RandomSampleScriptGenerator {
             "end;",
             "",
             "",
+        ]
+        if folderBalance != .off {
+            lines += balancedItemGUIDsLines(predicate: predicate, balance: folderBalance)
+        }
+        lines += [
             "// Materializes the random GUIDs into full catalog items (with datasets).",
             "function BuildRandomItems: TCatalogItems;",
             "var",
@@ -129,7 +141,7 @@ enum RandomSampleScriptGenerator {
             "begin",
             "  result := TCatalogItems.Create(TCatalogItem, '');",
             "",
-            "  AGUIDs := RandomItemGUIDs(SAMPLE_SIZE);",
+            "  AGUIDs := \(folderBalance == .off ? "RandomItemGUIDs" : "BalancedItemGUIDs")(SAMPLE_SIZE);",
             "  try",
             "    AClassGUID := PublicCatalog.StoreItemGUIDsToTempList(AGUIDs, False);",
             "    try",
@@ -189,7 +201,7 @@ enum RandomSampleScriptGenerator {
 
     // MARK: - Header
 
-    private static func headerLines(filter: SampleFilter, generatedAt: Date) -> [String] {
+    private static func headerLines(filter: SampleFilter, folderBalance: FolderBalance, generatedAt: Date) -> [String] {
         var lines = [
             "{",
             "  Random Catalog Sample",
@@ -202,6 +214,12 @@ enum RandomSampleScriptGenerator {
         if !filterLines.isEmpty {
             lines.append("")
             lines += filterLines
+        }
+
+        switch folderBalance {
+        case .off: break
+        case .balanced: lines += ["", "  Folder balance: Balanced (folders weighted by the square root of their size)"]
+        case .equal: lines += ["", "  Folder balance: Equal (every folder equally likely)"]
         }
 
         lines += [
@@ -302,6 +320,64 @@ enum RandomSampleScriptGenerator {
         case .all: return "all of \(count) categories (including subcategories)"
         case .none: return "none of \(count) categories (including subcategories)"
         }
+    }
+
+    // MARK: - Folder balance
+
+    /// Not transcribed from a verified script, unlike everything above:
+    /// written for this feature in the same conservative Pascal
+    /// (`try...finally` only, `TStringList` only, short comments). The
+    /// query is one literal on each side of `IntToStr(ACount)`, never
+    /// two literals joined by `+`.
+    private static func balancedItemGUIDsLines(predicate: String?, balance: FolderBalance) -> [String] {
+        let query = FolderBalanceSQL.sampleParts(predicate: predicate, balance: balance)
+        return [
+            "// Draws folders by weight, then random photos within each folder.",
+            "function BalancedItemGUIDs(ACount: Integer): TStringList;",
+            "var",
+            "  ASampleSet: TDBXOMClientDataSet;",
+            "  ATopUp: TStringList;",
+            "  I: Integer;",
+            "begin",
+            "  result := TStringList.Create;",
+            "  result.Sorted := True;",
+            "  result.Duplicates := dupIgnore;",
+            "",
+            "  ASampleSet := PublicCatalog.NewDataSet;",
+            "  try",
+            "    ASampleSet.CommandText :=",
+            "      \(PascalStringLiteral.escape(query.beforeCount)) +",
+            "      IntToStr(ACount) + \(PascalStringLiteral.escape(query.afterCount));",
+            "    ASampleSet.OpenSet;",
+            "    while not ASampleSet.EndOfSet do",
+            "    begin",
+            "      result.Add(ASampleSet.FieldValue('GUID'));",
+            "      ASampleSet.NextInSet;",
+            "    end;",
+            "    ASampleSet.CloseSet;",
+            "  finally",
+            "    PublicCatalog.FreeDataSet(ASampleSet);",
+            "  end;",
+            "",
+            "  // Folders smaller than their share leave a gap; fill it at random.",
+            "  if result.Count < ACount then",
+            "  begin",
+            "    ATopUp := RandomItemGUIDs(ACount);",
+            "    try",
+            "      I := 0;",
+            "      while (result.Count < ACount) and (I < ATopUp.Count) do",
+            "      begin",
+            "        result.Add(ATopUp.Strings[I]);",
+            "        Inc(I);",
+            "      end;",
+            "    finally",
+            "      ATopUp.Free;",
+            "    end;",
+            "  end;",
+            "end;",
+            "",
+            "",
+        ]
     }
 
     // MARK: - The two dynamic CommandText assignments
