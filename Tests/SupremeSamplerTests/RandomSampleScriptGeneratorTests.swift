@@ -84,9 +84,8 @@ final class RandomSampleScriptGeneratorTests: XCTestCase {
     /// `#[ignore]`, except decided at runtime here rather than
     /// declared up front.
     func test_givenNoFilter_whenGenerating_thenMatchesRealScriptVerbatimLineForLine() throws {
-        let realScriptPath = "~/Projects/pascal/photo supreme/RandomCatalogSample.psc"
-        guard let realScript = try? String(contentsOfFile: realScriptPath, encoding: .utf8) else {
-            throw XCTSkip("RandomCatalogSample.psc not found at \(realScriptPath) -- skipping cross-repo check")
+        guard let (realScript, realSampleSize) = ReferenceScript.load() else {
+            throw XCTSkip("RandomCatalogSample.psc not found at \(ReferenceScript.path) -- skipping cross-repo check")
         }
 
         // Lines 1-13 of the real file are its own header comment block,
@@ -107,8 +106,13 @@ final class RandomSampleScriptGeneratorTests: XCTestCase {
             .drop { $0 != "const" }
             .filter { !$0.isEmpty }
 
-        let generated = RandomSampleScriptGenerator.generate(sampleSize: 10000, generatedAt: fixedDate)
+        let generated = RandomSampleScriptGenerator.generate(sampleSize: realSampleSize, generatedAt: fixedDate)
 
+        // Guards against this test silently comparing nothing, which it
+        // did once the working copy was re-saved with CRLF endings: every
+        // line then ended in "\r", no line equalled "const", and the
+        // loop below ran zero times while still passing.
+        XCTAssertGreaterThan(realBodyLines.count, 100, "compared almost nothing -- is the reference script's format different?")
         for line in realBodyLines {
             XCTAssertTrue(
                 generated.contains(line),

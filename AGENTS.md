@@ -327,6 +327,11 @@ touching it:
   failed, if that file isn't present on the machine running the test) —
   keep that test whenever the boilerplate changes, don't just update
   `invariantLines` by hand.
+  **Cross-repo tests read the reference through `ReferenceScript.load()`**
+  (`TestSupport.swift`), which normalizes CRLF to LF and uses the file's
+  own `SAMPLE_SIZE`. Reading it raw once made that test silently compare
+  zero lines and pass: the working copy had been re-saved with CRLF, so no
+  line equalled `const`. It now also fails if it compares almost nothing.
 
 ## Commands
 
