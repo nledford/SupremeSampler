@@ -284,6 +284,68 @@ final class PhotoSupremeCatalogTests: XCTestCase {
         XCTAssertEqual(count, 2, "only \"none\" and \"b-only\" lack catA")
     }
 
+    // MARK: - matchingItemCount: category branches (a selection plus its descendants)
+
+    /// Two branches, each a parent keyword plus its children:
+    /// pines = {pines, smooth, tan}, places = {places, lake}.
+    /// Photos are tagged only with child keywords, never the parent --
+    /// the shape the real catalog actually has.
+    private let pinesBranch = CategoryBranch(rootGUID: "pines", propGUIDs: ["pines", "smooth", "tan"])
+    private let clothesBranch = CategoryBranch(rootGUID: "places", propGUIDs: ["lake", "places"])
+
+    private func makeBranchFixture() throws {
+        try makeFixture([
+            FixtureItem(guid: "untagged", propGUIDs: []),
+            FixtureItem(guid: "smooth-only", propGUIDs: ["smooth"]),
+            FixtureItem(guid: "smooth-and-tan", propGUIDs: ["smooth", "tan"]),
+            FixtureItem(guid: "tan-and-lake", propGUIDs: ["tan", "lake"]),
+            FixtureItem(guid: "lake-only", propGUIDs: ["lake"]),
+        ])
+    }
+
+    func test_givenAnyOfABranch_whenOnlyChildKeywordsAreTagged_thenThosePhotosMatch() async throws {
+        try makeBranchFixture()
+        let catalog = try PhotoSupremeCatalog(path: fixturePath)
+
+        let count = try await catalog.matchingItemCount(
+            for: SampleFilter(category: CategoryFilter(branches: [pinesBranch], mode: .any)))
+
+        XCTAssertEqual(count, 3, "smooth-only, smooth-and-tan, tan-and-lake carry a pines keyword")
+    }
+
+    func test_givenAllOfTwoBranches_whenCountingMatches_thenAPhotoNeedsOneKeywordFromEachBranch() async throws {
+        try makeBranchFixture()
+        let catalog = try PhotoSupremeCatalog(path: fixturePath)
+
+        let count = try await catalog.matchingItemCount(
+            for: SampleFilter(category: CategoryFilter(branches: [pinesBranch, clothesBranch], mode: .all)))
+
+        // smooth-and-tan has two keywords, but both from the pines branch:
+        // not a match. Only tan-and-lake touches both branches.
+        XCTAssertEqual(count, 1)
+    }
+
+    func test_givenAllOfOneBranch_whenCountingMatches_thenAnyKeywordInTheBranchIsEnough() async throws {
+        // "All of [Pines]" must not demand every keyword under Pines.
+        try makeBranchFixture()
+        let catalog = try PhotoSupremeCatalog(path: fixturePath)
+
+        let count = try await catalog.matchingItemCount(
+            for: SampleFilter(category: CategoryFilter(branches: [pinesBranch], mode: .all)))
+
+        XCTAssertEqual(count, 3)
+    }
+
+    func test_givenNoneOfABranch_whenCountingMatches_thenPhotosTaggedWithADescendantAreExcluded() async throws {
+        try makeBranchFixture()
+        let catalog = try PhotoSupremeCatalog(path: fixturePath)
+
+        let count = try await catalog.matchingItemCount(
+            for: SampleFilter(category: CategoryFilter(branches: [pinesBranch], mode: .none)))
+
+        XCTAssertEqual(count, 2, "only untagged and lake-only have no pines keyword")
+    }
+
     // MARK: - matchingItemCount: combined rating + category
 
     func test_givenRatingAndCategoryFilters_whenCountingMatches_thenBothMustMatch() async throws {

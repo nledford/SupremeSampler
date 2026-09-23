@@ -48,6 +48,21 @@ final class SQLPredicateTextTests: XCTestCase {
         )
     }
 
+    func test_givenCategoryModeAnyOverBranches_whenRendering_thenListsEveryKeywordInEveryBranchOnce() {
+        let filter = SampleFilter(
+            category: CategoryFilter(
+                branches: [
+                    CategoryBranch(rootGUID: "P", propGUIDs: ["C1", "P"]),
+                    CategoryBranch(rootGUID: "C1", propGUIDs: ["C1"]),
+                ],
+                mode: .any
+            ))
+        XCTAssertEqual(
+            SQLPredicateText.render(filter),
+            "idCatalogItem.GUID IN (SELECT d.CatalogItemGUID FROM idCatalogItemDefinition d WHERE d.GUID IN ('C1', 'P') AND d.CatalogItemGUID IS NOT NULL)"
+        )
+    }
+
     func test_givenEmptyPropGUIDsModeAny_whenRendering_thenRendersVacuouslyFalse() {
         let filter = SampleFilter(category: CategoryFilter(propGUIDs: [], mode: .any))
         XCTAssertEqual(SQLPredicateText.render(filter), "0 = 1")

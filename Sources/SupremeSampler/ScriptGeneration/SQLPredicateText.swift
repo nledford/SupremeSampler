@@ -51,7 +51,7 @@ enum SQLPredicateText {
     }
 
     private static func categoryClause(_ category: CategoryFilter) -> String {
-        guard !category.propGUIDs.isEmpty else {
+        guard !category.branches.isEmpty else {
             // Same vacuous-case reasoning as PhotoSupremeCatalog's
             // categoryPredicate: "has any of zero categories" can never
             // be true; "has all/none of zero categories" is trivially
@@ -64,15 +64,16 @@ enum SQLPredicateText {
 
         switch category.mode {
         case .any:
-            return "idCatalogItem.GUID IN " + photosWithAnyPropSubquery(category.propGUIDs)
+            return "idCatalogItem.GUID IN " + photosWithAnyPropSubquery(category.allPropGUIDs)
         case .none:
-            return "idCatalogItem.GUID NOT IN " + photosWithAnyPropSubquery(category.propGUIDs)
+            return "idCatalogItem.GUID NOT IN " + photosWithAnyPropSubquery(category.allPropGUIDs)
         case .all:
-            // One membership test per GUID.
-            let perGUID = category.propGUIDs.map {
-                "idCatalogItem.GUID IN " + photosWithAnyPropSubquery([$0])
+            // One membership test per branch: the photo needs *some*
+            // keyword from each branch, not every keyword within a branch.
+            let perBranch = category.branches.map {
+                "idCatalogItem.GUID IN " + photosWithAnyPropSubquery($0.propGUIDs)
             }
-            return "(" + perGUID.joined(separator: " AND ") + ")"
+            return "(" + perBranch.joined(separator: " AND ") + ")"
         }
     }
 

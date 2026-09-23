@@ -295,7 +295,7 @@ struct PhotoSupremeCatalog: Sendable {
     /// Each mode below tests the photo's GUID for membership in the set
     /// of photos carrying some prop from a list.
     private static func categoryPredicate(_ category: CategoryFilter) -> SQL {
-        guard !category.propGUIDs.isEmpty else {
+        guard !category.branches.isEmpty else {
             // Vacuous cases: "has any of zero categories" can never be
             // true; "has all of zero categories" and "has none of zero
             // categories" are trivially true for every photo. Handled
@@ -311,16 +311,18 @@ struct PhotoSupremeCatalog: Sendable {
 
         switch category.mode {
         case .any:
-            return "idCatalogItem.GUID IN \(photosWithAnyPropSubquery(category.propGUIDs))"
+            return "idCatalogItem.GUID IN \(photosWithAnyPropSubquery(category.allPropGUIDs))"
         case .none:
-            return "idCatalogItem.GUID NOT IN \(photosWithAnyPropSubquery(category.propGUIDs))"
+            return "idCatalogItem.GUID NOT IN \(photosWithAnyPropSubquery(category.allPropGUIDs))"
         case .all:
-            // One membership test per GUID. `SQL` values join like
-            // strings but stay parameterized.
-            let perGUID = category.propGUIDs.map { guid -> SQL in
-                "idCatalogItem.GUID IN \(photosWithAnyPropSubquery([guid]))"
+            // One membership test per branch: the photo needs *some*
+            // keyword from each selected branch, not every keyword within
+            // a branch. `SQL` values join like strings but stay
+            // parameterized.
+            let perBranch = category.branches.map { branch -> SQL in
+                "idCatalogItem.GUID IN \(photosWithAnyPropSubquery(branch.propGUIDs))"
             }
-            return "(\(perGUID.joined(separator: " AND ")))"
+            return "(\(perBranch.joined(separator: " AND ")))"
         }
     }
 
@@ -329,10 +331,11 @@ struct PhotoSupremeCatalog: Sendable {
     /// Deliberately an uncorrelated `IN (SELECT ...)` rather than a
     /// correlated `EXISTS (... WHERE d.CatalogItemGUID = idCatalogItem.GUID)`.
     /// The correlated form scans all millions of photos and probes the index
-    /// once per photo per GUID, so its cost grows with the list length.
-    /// Measured on the real catalog (2026-09-23) with multi-keyword
-    /// lists: 15.7s -> 0.23s and 10.6s -> 1.1s, same counts. This form
-    /// is driven from `idCatalogItemDefinition`'s index on `GUID` instead.
+    /// once per photo per GUID, so its cost grows with the list length --
+    /// which a whole branch makes long. Measured on the real catalog
+    /// (2026-09-23) with multi-keyword lists: 15.7s -> 0.23s and 10.6s ->
+    /// 1.1s, same counts. This form is driven from
+    /// `idCatalogItemDefinition`'s index on `GUID` instead.
     ///
     /// `IS NOT NULL` because the real schema doesn't declare
     /// `CatalogItemGUID` NOT NULL, and a single NULL in a `NOT IN` list

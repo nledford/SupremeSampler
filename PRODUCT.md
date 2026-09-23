@@ -85,6 +85,7 @@ locally; it is not published by IDimager.
 - Rating: exactly / at least / at most, value 0–5.
 - Category/keyword: any of / all of / none of, chosen from a genuine
   hierarchical multi-select tree (cmd/shift-click, native macOS `List`).
+  Selecting a category or keyword includes all of its subcategories.
 - Sample size: 1…1,000,000, step 100, default 10,000.
 
 **Hard constraints**

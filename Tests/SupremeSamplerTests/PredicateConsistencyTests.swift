@@ -103,7 +103,12 @@ final class PredicateConsistencyTests: XCTestCase {
             FixtureItem(guid: "ab-r3", rating: 3, propGUIDs: ["catA", "catB"]),
             FixtureItem(guid: "abc-r5", rating: 5, propGUIDs: ["catA", "catB", "catC"]),
             FixtureItem(guid: "b-r5", rating: 5, propGUIDs: ["catB"]),
+            // Tagged only with child keywords of the branches below.
+            FixtureItem(guid: "a1-r1", rating: 1, propGUIDs: ["catA-child"]),
+            FixtureItem(guid: "a1-b1-r4", rating: 4, propGUIDs: ["catA-child", "catB-child"]),
         ])
+        let branchA = CategoryBranch(rootGUID: "catA", propGUIDs: ["catA", "catA-child"])
+        let branchB = CategoryBranch(rootGUID: "catB", propGUIDs: ["catB", "catB-child"])
         let catalog = try PhotoSupremeCatalog(path: fixturePath)
 
         let filters: [SampleFilter] = [
@@ -120,6 +125,11 @@ final class PredicateConsistencyTests: XCTestCase {
                 rating: .atLeast(3),
                 category: CategoryFilter(propGUIDs: ["catB"], mode: .any)
             ),
+            SampleFilter(category: CategoryFilter(branches: [branchA], mode: .any)),
+            SampleFilter(category: CategoryFilter(branches: [branchA, branchB], mode: .any)),
+            SampleFilter(category: CategoryFilter(branches: [branchA, branchB], mode: .all)),
+            SampleFilter(category: CategoryFilter(branches: [branchA], mode: .none)),
+            SampleFilter(rating: .atLeast(2), category: CategoryFilter(branches: [branchA, branchB], mode: .all)),
         ]
 
         for filter in filters {

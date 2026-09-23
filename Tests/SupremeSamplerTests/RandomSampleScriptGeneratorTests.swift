@@ -193,7 +193,7 @@ final class RandomSampleScriptGeneratorTests: XCTestCase {
         let script = RandomSampleScriptGenerator.generate(sampleSize: 100, filter: filter, generatedAt: fixedDate)
 
         XCTAssertTrue(script.contains("Rating filter: at least 4"))
-        XCTAssertTrue(script.contains("Category filter: all of 2 categories"))
+        XCTAssertTrue(script.contains("Category filter: all of 2 categories (including subcategories)"))
     }
 
     func test_givenNoFilter_whenGenerating_thenHeaderOmitsFilterSummaryLines() {

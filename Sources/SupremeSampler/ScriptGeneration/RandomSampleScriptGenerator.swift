@@ -234,10 +234,11 @@ enum RandomSampleScriptGenerator {
     }
 
     private static func describe(_ category: CategoryFilter) -> String {
+        let count = category.branches.count
         switch category.mode {
-        case .any: return "any of \(category.propGUIDs.count) categories"
-        case .all: return "all of \(category.propGUIDs.count) categories"
-        case .none: return "none of \(category.propGUIDs.count) categories"
+        case .any: return "any of \(count) categories (including subcategories)"
+        case .all: return "all of \(count) categories (including subcategories)"
+        case .none: return "none of \(count) categories (including subcategories)"
         }
     }
 

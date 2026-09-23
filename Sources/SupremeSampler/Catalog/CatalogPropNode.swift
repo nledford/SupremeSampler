@@ -27,6 +27,11 @@ struct CatalogPropNode: Equatable, Hashable, Identifiable {
         children.isEmpty ? nil : children
     }
 
+    /// This node's GUID followed by every descendant's, depth-first.
+    var subtreeGUIDs: [String] {
+        [guid] + children.flatMap(\.subtreeGUIDs)
+    }
+
     /// Builds the tree from two flat inputs -- no database access, no
     /// recursive SQL, fully synchronous and pure, which is what makes it
     /// trivially unit-testable with synthetic data. Ported from a

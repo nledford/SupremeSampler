@@ -107,6 +107,17 @@ cmd/shift-click natively via `selection:`); **no third-party tree-view
 package is needed.** See `SampleBuilderView`'s `List(model.propTree,
 children: \.childrenOrNil, ...)`.
 
+**Selecting a node selects its whole branch** (the node plus every
+subcategory beneath it) — `CategoryBranch.resolve` turns the picker's
+selected GUIDs into one `CategoryBranch` per selection. "Any"/"none"
+test against the union of all branches; "all" means *some* keyword
+from *every* branch, not every keyword within a branch. This matters
+on the real catalog: no photo is ever assigned a top-level category
+directly, and parent keywords are rarely assigned themselves (checked
+2026-09-23 — a parent keyword had 0 direct assignments but thousands of photos
+across its 15 children), so exact-GUID matching made parent
+selections count nothing.
+
 Both predicate renderers express category rules as an uncorrelated
 `idCatalogItem.GUID [NOT] IN (SELECT CatalogItemGUID ...)` rather
 than a correlated `EXISTS` — the `EXISTS` form scans every photo and

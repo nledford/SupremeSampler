@@ -140,8 +140,13 @@ final class SampleBuilderModel {
         }
     }
 
+    /// Selecting a node in the tree selects its whole branch (the node
+    /// plus every subcategory beneath it) -- see `CategoryBranch`.
     private var categoryFilter: CategoryFilter {
-        CategoryFilter(propGUIDs: Array(selectedCategoryGUIDs), mode: categoryMode)
+        CategoryFilter(
+            branches: CategoryBranch.resolve(selectedGUIDs: selectedCategoryGUIDs, in: propTree),
+            mode: categoryMode
+        )
     }
 
     /// The generated `.psc` source for the current filter/size -- pure,
