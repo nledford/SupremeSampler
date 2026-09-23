@@ -243,6 +243,29 @@ struct PhotoSupremeCatalog: Sendable {
         }
     }
 
+    /// Every distinct file type (see `FileTypeFilter`) with its photo
+    /// count, most common first. `rtrim(name, <name with dots removed>)`
+    /// strips everything after the last dot -- SQLite has no "last index
+    /// of" -- so the extension is what follows. Scans every photo: ~4s on
+    /// the real catalog, which is why the model loads this in the
+    /// background.
+    func listFileTypes() async throws -> [ValueCount] {
+        try await dbPool.read { db in
+            try Row.fetchAll(
+                db,
+                sql: """
+                    SELECT CASE WHEN instr(name, '.') = 0 THEN ''
+                                ELSE lower(substr(name, length(rtrim(name, replace(name, '.', ''))) + 1))
+                           END AS ext,
+                           COUNT(*) AS photos
+                    FROM (SELECT COALESCE(FileName, '') AS name FROM idCatalogItem)
+                    GROUP BY ext
+                    ORDER BY photos DESC, ext
+                    """
+            ).map { ValueCount(value: $0["ext"], count: $0["photos"]) }
+        }
+    }
+
     /// Shared by `catalogItemExtent()` and `sampleGUIDs`, both of which
     /// need it. Takes an already-open `Database` (rather than reading
     /// from `dbPool` itself) so `sampleGUIDs` can call this and
@@ -298,6 +321,7 @@ struct PhotoSupremeCatalog: Sendable {
         case .category(let category): return categoryPredicate(category)
         case .path(let path): return pathPredicate(path)
         case .label(let label): return labelPredicate(label)
+        case .fileType(let fileType): return fileTypePredicate(fileType)
         case .group(let group): return groupPredicate(group)
         }
     }
@@ -319,6 +343,25 @@ struct PhotoSupremeCatalog: Sendable {
         case .any: return "(\(predicates.joined(separator: " OR ")))"
         case .none: return "NOT COALESCE((\(predicates.joined(separator: " OR "))), 0)"
         }
+    }
+
+    /// Each extension is an ends-with match on the file name ("%.jpg"),
+    /// which is exactly "the last extension is jpg"; "" (no extension)
+    /// is a name with no dot or ending in one. `COALESCE(FileName, '')`
+    /// keeps the test from ever being NULL, so "none of" can simply
+    /// negate it. `LIKE` ignores A-Z case, as extensions need.
+    private static func fileTypePredicate(_ fileType: FileTypeFilter) -> SQL {
+        guard !fileType.extensions.isEmpty else {
+            return fileType.mode == .any ? "0 = 1" : "1 = 1"
+        }
+        let tests = fileType.extensions.map { ext -> SQL in
+            if ext.isEmpty {
+                return "(instr(COALESCE(FileName, ''), '.') = 0 OR COALESCE(FileName, '') LIKE '%.')"
+            }
+            return "COALESCE(FileName, '') LIKE \(FileTypeFilter.likePattern(forExtension: ext)) ESCAPE '\\'"
+        }
+        let anyOf: SQL = "(\(tests.joined(separator: " OR ")))"
+        return fileType.mode == .any ? anyOf : "NOT \(anyOf)"
     }
 
     /// `COALESCE(idLabel, '')` treats a NULL label as "no label" (`""`),

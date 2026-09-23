@@ -91,7 +91,8 @@ struct SampleBuilderView: View {
 
             Section("Rules") {
                 RuleGroupEditor(
-                    group: $model.rules, propTree: model.propTree, depth: 0, onRemove: nil, labels: model.catalogLabels)
+                    group: $model.rules, propTree: model.propTree, depth: 0, onRemove: nil,
+                    labels: model.catalogLabels, fileTypes: model.catalogFileTypes)
             }
 
             Section("Preview") {

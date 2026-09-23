@@ -233,6 +233,10 @@ enum RandomSampleScriptGenerator {
             let count = label.labels.count
             let mode = label.mode == .any ? "any of" : "none of"
             return [indent + "Label filter: \(mode) \(count) label\(count == 1 ? "" : "s")"]
+        case .fileType(let fileType):
+            let mode = fileType.mode == .any ? "any of" : "none of"
+            let types = fileType.extensions.map { $0.isEmpty ? "(no extension)" : commentSafe($0) }
+            return [indent + "File type filter: \(mode) " + (types.isEmpty ? "(none picked)" : types.joined(separator: ", "))]
         case .group(let group): return groupSummaryLines(group, indent: indent)
         }
     }

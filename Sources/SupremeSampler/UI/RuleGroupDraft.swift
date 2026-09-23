@@ -47,14 +47,22 @@ struct LabelRuleDraft: Equatable {
     var selectedLabels: Set<String> = []
 }
 
-/// One row in a group: a rating, category, path, or label rule, or a
-/// nested group.
+/// A file-type rule as the controls see it: a match mode and the
+/// extensions picked from the catalog's list (`""` is "No extension").
+struct FileTypeRuleDraft: Equatable {
+    var mode: ValueMatchMode = .any
+    var selectedTypes: Set<String> = []
+}
+
+/// One row in a group: a rating, category, path, label, or file-type
+/// rule, or a nested group.
 struct RuleDraft: Identifiable, Equatable {
     enum Content: Equatable {
         case rating(RatingRuleDraft)
         case category(CategoryRuleDraft)
         case path(PathRuleDraft)
         case label(LabelRuleDraft)
+        case fileType(FileTypeRuleDraft)
         case group(RuleGroupDraft)
     }
 
@@ -75,6 +83,7 @@ enum NewRuleKind {
     case category
     case path
     case label
+    case fileType
     case group
 }
 
@@ -100,6 +109,7 @@ struct RuleGroupDraft: Identifiable, Equatable {
         case .category: rules.append(RuleDraft(.category(CategoryRuleDraft())))
         case .path: rules.append(RuleDraft(.path(PathRuleDraft())))
         case .label: rules.append(RuleDraft(.label(LabelRuleDraft())))
+        case .fileType: rules.append(RuleDraft(.fileType(FileTypeRuleDraft())))
         case .group: rules.append(RuleDraft(.group(RuleGroupDraft())))
         }
     }
@@ -132,6 +142,8 @@ struct RuleGroupDraft: Identifiable, Equatable {
                     // Sorted: the selection is a `Set`, whose order must
                     // not leak into the generated script.
                     return .label(LabelFilter(labels: label.selectedLabels.sorted(), mode: label.mode))
+                case .fileType(let fileType):
+                    return .fileType(FileTypeFilter(extensions: fileType.selectedTypes.sorted(), mode: fileType.mode))
                 case .group(let group):
                     return .group(group.domainGroup(resolvingCategoriesIn: tree))
                 }

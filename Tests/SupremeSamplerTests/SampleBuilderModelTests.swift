@@ -35,7 +35,8 @@ final class SampleBuilderModelTests: XCTestCase {
                     CREATE TABLE idCatalogItem (
                         GUID TEXT PRIMARY KEY,
                         Rating INTEGER NOT NULL DEFAULT 0,
-                        idLabel TEXT
+                        idLabel TEXT,
+                        FileName TEXT
                     )
                     """)
             try db.execute(
@@ -63,8 +64,8 @@ final class SampleBuilderModelTests: XCTestCase {
                     """)
             for i in 1...rowCount {
                 try db.execute(
-                    sql: "INSERT INTO idCatalogItem (GUID, Rating, idLabel) VALUES (?, ?, ?)",
-                    arguments: ["item-\(i)", 0, i == 1 ? "Select" : ""]
+                    sql: "INSERT INTO idCatalogItem (GUID, Rating, idLabel, FileName) VALUES (?, ?, ?, ?)",
+                    arguments: ["item-\(i)", 0, i == 1 ? "Select" : "", i == 1 ? "clip.mkv" : "photo-\(i).jpg"]
                 )
             }
             // A single top-level category with no children -- enough
@@ -451,6 +452,20 @@ final class SampleBuilderModelTests: XCTestCase {
 
         XCTAssertEqual(
             model.catalogLabels, .loaded([ValueCount(value: "", count: 2), ValueCount(value: "Select", count: 1)]))
+    }
+
+    func test_givenACatalogOpens_whenItsFileTypesFinishLoadingInTheBackground_thenTheyAreListedWithCounts() async throws {
+        // Listing file types scans every photo (~4s on the real catalog),
+        // so it doesn't hold up opening the catalog.
+        let model = SampleBuilderModel.forTesting()
+
+        model.openCatalog(at: try makeFixturePath(rowCount: 3))
+        await model.waitForPendingCatalogOpenForTesting()
+        XCTAssertNotNil(model.catalogPath, "the catalog is open before file types are known")
+        await model.waitForPendingFileTypesForTesting()
+
+        XCTAssertEqual(
+            model.catalogFileTypes, .loaded([ValueCount(value: "jpg", count: 2), ValueCount(value: "mkv", count: 1)]))
     }
 
     func test_givenNoCatalogOpen_whenAskingForLabels_thenTheyAreStillLoading() {

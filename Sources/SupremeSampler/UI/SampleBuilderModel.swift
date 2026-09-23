@@ -35,6 +35,10 @@ final class SampleBuilderModel {
     private(set) var propTree: [CatalogPropNode] = []
     /// The open catalog's color labels, for the label rule's picker.
     private(set) var catalogLabels: CatalogValues = .loading
+    /// The open catalog's file types, for the file-type rule's picker.
+    /// Loaded in the background after opening (see `loadFileTypes`).
+    private(set) var catalogFileTypes: CatalogValues = .loading
+    private var fileTypesTask: Task<Void, Never>?
     private(set) var matchingCount: Int?
     private(set) var errorMessage: String?
     private(set) var isOpeningCatalog = false
@@ -191,12 +195,33 @@ final class SampleBuilderModel {
                 catalogPath = path
                 catalogStore.savePath(path)
                 refreshMatchingCount()
+                loadFileTypes(from: opened)
             } catch {
                 catalog = nil
                 catalogPath = nil
                 propTree = []
                 matchingCount = nil
                 errorMessage = "Couldn't open catalog: \(error.localizedDescription)"
+            }
+        }
+    }
+
+    /// Lists file types without holding up the catalog open: it scans
+    /// every photo (~4s on the real catalog). Cancels a previous load, so
+    /// switching catalogs can't have the old catalog's list arrive late
+    /// and overwrite the new one -- the same guard `refreshMatchingCount`
+    /// uses.
+    private func loadFileTypes(from catalog: PhotoSupremeCatalog) {
+        fileTypesTask?.cancel()
+        catalogFileTypes = .loading
+        fileTypesTask = Task {
+            do {
+                let types = try await catalog.listFileTypes()
+                guard !Task.isCancelled else { return }
+                catalogFileTypes = .loaded(types)
+            } catch {
+                guard !Task.isCancelled else { return }
+                catalogFileTypes = .failed(error.localizedDescription)
             }
         }
     }
@@ -336,6 +361,12 @@ final class SampleBuilderModel {
     /// instead of guessing how long to sleep.
     func waitForPendingMatchCountForTesting() async {
         await matchCountTask?.value
+    }
+
+    /// Test seam: awaits the background file-type listing, if one is
+    /// running.
+    func waitForPendingFileTypesForTesting() async {
+        await fileTypesTask?.value
     }
 
     /// Test seam: awaits whatever `openCatalog(at:)` call is currently

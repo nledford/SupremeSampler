@@ -632,6 +632,64 @@ final class PhotoSupremeCatalogTests: XCTestCase {
         XCTAssertEqual(noneOfNothing, 6)
     }
 
+    // MARK: - File types
+
+    private func makeFileTypeFixture() throws {
+        try makeFixture([
+            FixtureItem(guid: "jpg", path: "/Volumes/T/a.jpg"),
+            FixtureItem(guid: "jpg-upper", path: "/Volumes/T/B.JPG"),
+            FixtureItem(guid: "double", path: "/Volumes/T/c.lr_.jpg"),
+            FixtureItem(guid: "jpg-then-png", path: "/Volumes/T/d.jpg.png"),
+            FixtureItem(guid: "mkv", path: "/Volumes/T/clip.mkv"),
+            FixtureItem(guid: "no-ext", path: "/Volumes/T/README"),
+        ])
+    }
+
+    private func fileTypeCount(_ mode: ValueMatchMode, _ types: [String]) async throws -> Int {
+        try await PhotoSupremeCatalog(path: fixturePath).matchingItemCount(
+            for: SampleFilter(
+                root: RuleGroup(match: .all, rules: [.fileType(FileTypeFilter(extensions: types, mode: mode))])))
+    }
+
+    func test_givenACatalog_whenListingFileTypes_thenEachLastExtensionComesWithItsCountIgnoringCase() async throws {
+        try makeFileTypeFixture()
+
+        let types = try await PhotoSupremeCatalog(path: fixturePath).listFileTypes()
+
+        XCTAssertEqual(
+            types,
+            [
+                ValueCount(value: "jpg", count: 3),
+                ValueCount(value: "", count: 1),
+                ValueCount(value: "mkv", count: 1),
+                ValueCount(value: "png", count: 1),
+            ])
+    }
+
+    func test_givenAnyOfAFileType_whenCountingMatches_thenOnlyTheLastExtensionCounts() async throws {
+        try makeFileTypeFixture()
+
+        let matches = try await fileTypeCount(.any, ["jpg"])
+
+        XCTAssertEqual(matches, 3, "a.jpg, B.JPG, c.lr_.jpg -- not d.jpg.png")
+    }
+
+    func test_givenNoneOfVideo_whenCountingMatches_thenVideosAreExcluded() async throws {
+        try makeFileTypeFixture()
+
+        let matches = try await fileTypeCount(.none, ["mkv"])
+
+        XCTAssertEqual(matches, 5)
+    }
+
+    func test_givenNoExtension_whenCountingMatches_thenFilesWithoutADotMatch() async throws {
+        try makeFileTypeFixture()
+
+        let matches = try await fileTypeCount(.any, [""])
+
+        XCTAssertEqual(matches, 1)
+    }
+
     // MARK: - matchingItemCount: combined rating + category
 
     func test_givenRatingAndCategoryFilters_whenCountingMatches_thenBothMustMatch() async throws {

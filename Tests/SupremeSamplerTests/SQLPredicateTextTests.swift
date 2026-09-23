@@ -154,6 +154,21 @@ final class SQLPredicateTextTests: XCTestCase {
         XCTAssertEqual(SQLPredicateText.render(filter), "COALESCE(idLabel, '') NOT IN ('Red')")
     }
 
+    // MARK: - File type
+
+    func test_givenAnyOfFileTypes_whenRendering_thenEachIsAnEndsWithMatch() {
+        let filter = SampleFilter(
+            root: RuleGroup(match: .all, rules: [.fileType(FileTypeFilter(extensions: ["jpg", "png"], mode: .any))]))
+        XCTAssertEqual(
+            SQLPredicateText.render(filter),
+            "(COALESCE(FileName, '') LIKE '%.jpg' ESCAPE '\\' OR COALESCE(FileName, '') LIKE '%.png' ESCAPE '\\')")
+    }
+
+    func test_givenNoneOfFileTypes_whenRendering_thenTheMatchIsNegated() {
+        let filter = SampleFilter(root: RuleGroup(match: .all, rules: [.fileType(FileTypeFilter(extensions: ["mkv"], mode: .none))]))
+        XCTAssertEqual(SQLPredicateText.render(filter), "NOT (COALESCE(FileName, '') LIKE '%.mkv' ESCAPE '\\')")
+    }
+
     // MARK: - Combined, and SQL-string-literal escaping of GUID values
 
     func test_givenRatingAndCategory_whenRendering_thenJoinsWithAND() {

@@ -93,6 +93,9 @@ locally; it is not published by IDimager.
 - Color label: is any of / none of the label values stored in the catalog,
   listed with counts. Labels are free text there, including imports from
   other apps and languages; they're shown as stored, not merged.
+- File type: is any of / none of the file extensions in the catalog (text
+  after the last dot, ignoring case), listed with counts — e.g. leave out
+  its few thousand mkv videos.
 - Rules combine in groups — Match all / any / none of — and a group can
   contain nested groups, Lightroom Smart Collection style. A "none of"
   group excludes photos. The builder starts empty (whole catalog).

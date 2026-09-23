@@ -29,8 +29,9 @@ struct RuleGroupEditor: View {
     /// `nil` for the root group, which can't be removed. `(() -> Void)?`
     /// is an optional closure, like `(() => void) | undefined` in TS.
     let onRemove: (() -> Void)?
-    /// The catalog's color labels, for label rules' pickers.
+    /// The catalog's color labels and file types, for those rules' pickers.
     var labels: CatalogValues = .loading
+    var fileTypes: CatalogValues = .loading
 
     var body: some View {
         // Kept short and on one line: the sidebar is narrow, and a row
@@ -54,6 +55,7 @@ struct RuleGroupEditor: View {
                 Button("Category rule") { group.add(.category) }
                 Button("File path rule") { group.add(.path) }
                 Button("Color label rule") { group.add(.label) }
+                Button("File type rule") { group.add(.fileType) }
                 Divider()
                 Button("Nested group") { group.add(.group) }
             } label: {
@@ -88,7 +90,8 @@ struct RuleGroupEditor: View {
                 propTree: propTree,
                 depth: depth + 1,
                 onRemove: { group.removeRule(id: rule.id) },
-                labels: labels
+                labels: labels,
+                fileTypes: fileTypes
             )
         }
     }
@@ -125,6 +128,7 @@ struct RuleRow: View {
     let depth: Int
     let onRemove: () -> Void
     var labels: CatalogValues = .loading
+    var fileTypes: CatalogValues = .loading
 
     var body: some View {
         // `switch` over an enum with payloads, like Rust's `match`; each
@@ -181,6 +185,19 @@ struct RuleRow: View {
                 onRemove: onRemove
             )
             .padding(.leading, CGFloat(depth) * indentPerLevel)
+        case .fileType(let fileType):
+            FileTypeRuleRow(
+                rule: Binding(
+                    get: {
+                        if case .fileType(let current) = rule.content { return current }
+                        return fileType
+                    },
+                    set: { rule.content = .fileType($0) }
+                ),
+                fileTypes: fileTypes,
+                onRemove: onRemove
+            )
+            .padding(.leading, CGFloat(depth) * indentPerLevel)
         case .group(let group):
             RuleGroupEditor(
                 group: Binding(
@@ -193,7 +210,8 @@ struct RuleRow: View {
                 propTree: propTree,
                 depth: depth,
                 onRemove: onRemove,
-                labels: labels
+                labels: labels,
+                fileTypes: fileTypes
             )
         }
     }
@@ -334,6 +352,32 @@ struct LabelRuleRow: View {
             }
             CatalogValuePicker(
                 values: labels, selection: $rule.selectedLabels, noun: "labels", emptyValueName: "No label")
+        }
+    }
+}
+
+/// "File type [is any of / is none of]" plus the catalog's file types
+/// (last extension, lowercase) to pick from, each with its photo count.
+struct FileTypeRuleRow: View {
+    @Binding var rule: FileTypeRuleDraft
+    let fileTypes: CatalogValues
+    let onRemove: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("File type")
+                Picker("Match", selection: $rule.mode) {
+                    Text("is any of").tag(ValueMatchMode.any)
+                    Text("is none of").tag(ValueMatchMode.none)
+                }
+                .labelsHidden()
+                .fixedSize()
+                Spacer()
+                RemoveRuleButton(accessibilityLabel: "Remove file type rule", action: onRemove)
+            }
+            CatalogValuePicker(
+                values: fileTypes, selection: $rule.selectedTypes, noun: "file types", emptyValueName: "No extension")
         }
     }
 }

@@ -47,6 +47,7 @@ enum SQLPredicateText {
         case .category(let category): return categoryClause(category)
         case .path(let path): return pathClause(path)
         case .label(let label): return labelClause(label)
+        case .fileType(let fileType): return fileTypeClause(fileType)
         case .group(let group): return groupClause(group, isRoot: false)
         }
     }
@@ -73,6 +74,22 @@ enum SQLPredicateText {
             // silently excluding the photo from both sides.
             return "NOT COALESCE((" + clauses.joined(separator: " OR ") + "), 0)"
         }
+    }
+
+    /// Same shape and reasoning as `PhotoSupremeCatalog.fileTypePredicate`.
+    private static func fileTypeClause(_ fileType: FileTypeFilter) -> String {
+        guard !fileType.extensions.isEmpty else {
+            return fileType.mode == .any ? "0 = 1" : "1 = 1"
+        }
+        let tests = fileType.extensions.map { ext -> String in
+            if ext.isEmpty {
+                return "(instr(COALESCE(FileName, ''), '.') = 0 OR COALESCE(FileName, '') LIKE '%.')"
+            }
+            let pattern = SQLStringLiteral.render(FileTypeFilter.likePattern(forExtension: ext))
+            return "COALESCE(FileName, '') LIKE \(pattern) ESCAPE '\\'"
+        }
+        let anyOf = "(" + tests.joined(separator: " OR ") + ")"
+        return fileType.mode == .any ? anyOf : "NOT " + anyOf
     }
 
     /// Same shape and reasoning as `PhotoSupremeCatalog.labelPredicate`.

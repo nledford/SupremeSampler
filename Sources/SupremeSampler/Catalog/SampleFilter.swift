@@ -23,6 +23,7 @@ enum FilterRule: Equatable {
     case category(CategoryFilter)
     case path(PathFilter)
     case label(LabelFilter)
+    case fileType(FileTypeFilter)
     case group(RuleGroup)
 }
 

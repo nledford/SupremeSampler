@@ -181,7 +181,7 @@ final class PredicateConsistencyTests: XCTestCase {
     }
 
     private func randomRule(depth: Int, using rng: inout SeededGenerator) -> FilterRule {
-        switch Int.random(in: 0..<(depth > 0 ? 5 : 4), using: &rng) {
+        switch Int.random(in: 0..<(depth > 0 ? 6 : 5), using: &rng) {
         case 0:
             let value = Int.random(in: 0...5, using: &rng)
             return .rating([RatingFilter.exactly(value), .atLeast(value), .atMost(value)].randomElement(using: &rng)!)
@@ -202,6 +202,11 @@ final class PredicateConsistencyTests: XCTestCase {
             let labels = (0..<Int.random(in: 0...3, using: &rng)).map { _ in pool.randomElement(using: &rng)! }
             let mode = [ValueMatchMode.any, .none].randomElement(using: &rng)!
             return .label(LabelFilter(labels: labels, mode: mode))
+        case 4:
+            let pool = ["", "jpg", "png", "mkv", "lr_", "txt"]
+            let types = (0..<Int.random(in: 0...3, using: &rng)).map { _ in pool.randomElement(using: &rng)! }
+            let mode = [ValueMatchMode.any, .none].randomElement(using: &rng)!
+            return .fileType(FileTypeFilter(extensions: types, mode: mode))
         default:
             return .group(randomGroup(depth: depth - 1, using: &rng))
         }
@@ -248,6 +253,15 @@ final class PredicateConsistencyTests: XCTestCase {
             case .any: return label.labels.contains(value)
             case .none: return !label.labels.contains(value)
             }
+        case .fileType(let fileType):
+            // The text after the file name's last dot, ignoring A-Z case;
+            // "" when there's no dot (or it's the last character).
+            let fileName = item.fullPath.split(separator: "/").last.map(String.init) ?? ""
+            let ext = fileName.contains(".") ? asciiLowercased(String(fileName.split(separator: ".", omittingEmptySubsequences: false).last!)) : ""
+            switch fileType.mode {
+            case .any: return fileType.extensions.contains(ext)
+            case .none: return !fileType.extensions.contains(ext)
+            }
         case .group(let group):
             return oracleMatches(group, item)
         }
@@ -289,6 +303,11 @@ final class PredicateConsistencyTests: XCTestCase {
             FixtureItem(guid: "red-null-path", rating: 2, propGUIDs: ["catB"], label: "Red"),
             FixtureItem(guid: "quote", rating: 0, propGUIDs: [], label: "O'Brien"),
             FixtureItem(guid: "null-label", rating: 5, propGUIDs: [], label: nil),
+            FixtureItem(guid: "double-ext", rating: 3, propGUIDs: [], path: "/Volumes/T/c.lr_.jpg"),
+            FixtureItem(guid: "jpg-png", rating: 1, propGUIDs: ["catA"], path: "/Volumes/T/d.jpg.png"),
+            FixtureItem(guid: "video", rating: 0, propGUIDs: [], path: "/Volumes/T/clip.MKV", label: "Red"),
+            FixtureItem(guid: "no-ext", rating: nil, propGUIDs: [], path: "/Volumes/T/README"),
+            FixtureItem(guid: "trailing-dot", rating: 2, propGUIDs: [], path: "/Volumes/T/odd."),
         ]
         try makeFixture(items)
         let catalog = try PhotoSupremeCatalog(path: fixturePath)

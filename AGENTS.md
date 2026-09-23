@@ -206,6 +206,17 @@ for instance, so it isn't offered.
   `COALESCE(idLabel, '')` makes NULL mean "no label" and keeps
   `NOT IN` from dropping NULL rows. A failed listing shows in the
   picker (`CatalogValues.failed`) rather than failing the open.
+- **File type** (`FileTypeFilter`): the text after the *last* dot
+  (`c.lr_.jpg` is jpg), ignoring A–Z case; "" is no extension. Matched
+  as an ends-with `LIKE '%.jpg'`, which is exactly "last extension is
+  jpg". Listing needs a full scan (~4s), so the model loads it in the
+  background after the catalog opens (`loadFileTypes`, cancel-and-
+  replace on catalog switch).
+- **Known but not yet offered:** `idBookmark` has meaning lusia
+  assigned — 0 none, 2 curated, 3 random uncurated, 4 uncurated,
+  5 hidden (`src/domain/mod.rs` there) — and `Rating < 0` is lusia's
+  "pending deletion" (21 photos at -1), which the 0-5 rating stepper
+  can't express.
 
 ## Switching catalogs (File > Open Catalog…)
 

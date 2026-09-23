@@ -102,6 +102,23 @@ final class RuleGroupDraftTests: XCTestCase {
         XCTAssertEqual(filter(draft).root.rules, [.label(LabelFilter(labels: ["", "Red", "Select"], mode: .none))])
     }
 
+    func test_givenAnEmptyGroup_whenAddingAFileTypeRule_thenItMatchesAnyOfNothingUntilTypesArePicked() {
+        var draft = RuleGroupDraft()
+
+        draft.add(.fileType)
+
+        XCTAssertEqual(filter(draft).root.rules, [.fileType(FileTypeFilter(extensions: [], mode: .any))])
+    }
+
+    func test_givenAFileTypeRule_whenPickingTypes_thenTheFilterListsThemInStableOrder() {
+        var draft = RuleGroupDraft()
+        draft.add(.fileType)
+
+        draft.rules[0].content = .fileType(FileTypeRuleDraft(mode: .none, selectedTypes: ["mkv", "gif"]))
+
+        XCTAssertEqual(filter(draft).root.rules, [.fileType(FileTypeFilter(extensions: ["gif", "mkv"], mode: .none))])
+    }
+
     // MARK: - Editing rules
 
     func test_givenARatingRule_whenChangingItsComparisonAndValue_thenTheFilterFollows() {
