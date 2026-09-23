@@ -7,7 +7,7 @@ import Foundation
 /// (see `RandomCatalogSample.psc` and AGENTS.md); it has no bind-
 /// parameter API to hand values to safely the way GRDB does, so GUID
 /// values are inlined here as SQL string literals instead, each one
-/// escaped at the SQL level (see `sqlStringLiteral` below).
+/// escaped at the SQL level (see `SQLStringLiteral`).
 ///
 /// This deliberately duplicates the *shape* of
 /// `PhotoSupremeCatalog`'s private `predicate`/`ratingPredicate`/
@@ -111,23 +111,8 @@ enum SQLPredicateText {
     /// Same shape, and same reasons (index-driven, NULL-safe `NOT IN`),
     /// as `PhotoSupremeCatalog.photosWithAnyPropSubquery`.
     private static func photosWithAnyPropSubquery(_ propGUIDs: [String]) -> String {
-        let guidList = propGUIDs.map(sqlStringLiteral).joined(separator: ", ")
+        let guidList = propGUIDs.map(SQLStringLiteral.render).joined(separator: ", ")
         return "(SELECT d.CatalogItemGUID FROM idCatalogItemDefinition d "
             + "WHERE d.GUID IN (\(guidList)) AND d.CatalogItemGUID IS NOT NULL)"
-    }
-
-    /// SQL-level string-literal escaping for one GUID value -- distinct
-    /// from, and applied *before*, `PascalStringLiteral`'s escaping when
-    /// this text later gets embedded in a `.psc` file by
-    /// `RandomSampleScriptGenerator`. The generated script contains a
-    /// SQL string nested inside a Pascal string, so each layer needs its
-    /// own quote-doubling pass, applied from the inside out. SQL and
-    /// Pascal both happen to escape `'` the same way (by doubling it),
-    /// which is why this looks identical to `PascalStringLiteral.escape`
-    /// -- that's a coincidence of the two languages agreeing, not a
-    /// reason to share one implementation between two different escaping
-    /// *concerns*.
-    private static func sqlStringLiteral(_ value: String) -> String {
-        "'" + value.replacingOccurrences(of: "'", with: "''") + "'"
     }
 }

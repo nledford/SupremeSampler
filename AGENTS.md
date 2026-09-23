@@ -346,6 +346,18 @@ touching it:
   zero lines and pass: the working copy had been re-saved with CRLF, so no
   line equalled `const`. It now also fails if it compares almost nothing.
 
+- **Text in generated SQL is pure ASCII.** `SQLStringLiteral` renders
+  printable-ASCII runs as quoted literals and everything else as
+  SQLite `char(code, ...)` joined with `||` (`'Lil' || char(8217)`).
+  It's unknown how Script Studio decodes a BOM-less file; a
+  Delphi-lineage tool may assume the system code page, which would
+  garble raw UTF-8 like "選択" into text that silently matches nothing.
+  Every script so far has been ASCII, so this keeps it that way. The
+  header comment likewise shows non-ASCII as `?`, `}` as `)` (it would
+  end the `{ }` comment) and `'` as a backtick. Unverified in Script
+  Studio itself; `SQLStringLiteralTests` round-trips values through
+  SQLite.
+
 ## Commands
 
 Run `just` for the full list. Common ones:
