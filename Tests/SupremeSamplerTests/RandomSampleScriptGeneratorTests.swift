@@ -256,6 +256,18 @@ final class RandomSampleScriptGeneratorTests: XCTestCase {
         XCTAssertTrue(header.contains("Path filter: starts with \"/??/\""), String(header))
     }
 
+    private func header(for rules: [FilterRule]) -> String {
+        RandomSampleScriptGenerator.generate(
+            sampleSize: 100, filter: SampleFilter(root: RuleGroup(match: .all, rules: rules)), generatedAt: fixedDate)
+    }
+
+    func test_givenNegatedRules_whenGenerating_thenTheHeaderSaysNot() {
+        let script = header(for: [.rating(.isNot(0)), .path(PathFilter(kind: .endsWith, text: ".png", negated: true))])
+
+        XCTAssertTrue(script.contains("Rating filter: is not 0"))
+        XCTAssertTrue(script.contains("Path filter: does not end with \".png\""))
+    }
+
     // MARK: - Header
 
     func test_givenFilter_whenGenerating_thenHeaderSummarizesIt() {

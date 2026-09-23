@@ -82,14 +82,14 @@ locally; it is not published by IDimager.
 
 **Filters available today**
 
-- Rating: exactly / at least / at most, value 0–5.
+- Rating: is / is not / at least / at most, value 0–5.
 - Category/keyword: any of / all of / none of, chosen from a genuine
   hierarchical multi-select tree (cmd/shift-click, native macOS `List`).
   Selecting a category or keyword includes all of its subcategories.
 - Sample size: 1…1,000,000, step 100, default 10,000.
-- File path: contains / starts with / ends with some text, against the full
-  path (volume folder plus file name), ignoring A–Z case. `%`, `_` and `\`
-  are literal.
+- File path: contains / starts with / ends with some text, or does not,
+  against the full path (volume folder plus file name), ignoring A–Z case.
+  `%`, `_` and `\` are literal.
 - Color label: is any of / none of the label values stored in the catalog,
   listed with counts. Labels are free text there, including imports from
   other apps and languages; they're shown as stored, not merged.

@@ -191,8 +191,8 @@ final class ViewRenderingTests: XCTestCase {
     }
 
     func test_givenAPathRule_whenBuildingItsRow_thenEachKindRenders() {
-        for kind in PathMatchKind.allCases {
-            _ = PathRuleRow(rule: .constant(PathRuleDraft(kind: kind, text: "/2019/")), onRemove: {}).body
+        for pathOperator in PathOperator.allCases {
+            _ = PathRuleRow(rule: .constant(PathRuleDraft(operator: pathOperator, text: "/2019/")), onRemove: {}).body
         }
     }
 

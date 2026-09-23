@@ -252,13 +252,16 @@ enum RandomSampleScriptGenerator {
     }
 
     private static func describe(_ path: PathFilter) -> String {
-        let kind: String
-        switch path.kind {
-        case .startsWith: kind = "starts with"
-        case .endsWith: kind = "ends with"
-        case .contains: kind = "contains"
+        let phrase: String
+        switch (path.kind, path.negated) {
+        case (.startsWith, false): phrase = "starts with"
+        case (.endsWith, false): phrase = "ends with"
+        case (.contains, false): phrase = "contains"
+        case (.startsWith, true): phrase = "does not start with"
+        case (.endsWith, true): phrase = "does not end with"
+        case (.contains, true): phrase = "does not contain"
         }
-        return kind + " \"" + commentSafe(path.text) + "\""
+        return phrase + " \"" + commentSafe(path.text) + "\""
     }
 
     /// User text shown inside the `{ ... }` header comment: "}" would end
@@ -282,6 +285,7 @@ enum RandomSampleScriptGenerator {
         case .exactly(let value): return "exactly \(value)"
         case .atLeast(let value): return "at least \(value)"
         case .atMost(let value): return "at most \(value)"
+        case .isNot(let value): return "is not \(value)"
         }
     }
 

@@ -119,6 +119,25 @@ final class RuleGroupDraftTests: XCTestCase {
         XCTAssertEqual(filter(draft).root.rules, [.fileType(FileTypeFilter(extensions: ["gif", "mkv"], mode: .none))])
     }
 
+    func test_givenARatingRule_whenChoosingIsNot_thenTheFilterNegatesTheValue() {
+        var draft = RuleGroupDraft()
+        draft.add(.rating)
+
+        draft.rules[0].content = .rating(RatingRuleDraft(comparison: .isNot, value: 5))
+
+        XCTAssertEqual(filter(draft), SampleFilter(rating: .isNot(5)))
+    }
+
+    func test_givenAPathRule_whenChoosingANegatedOperator_thenTheFilterIsNegated() {
+        var draft = RuleGroupDraft()
+        draft.add(.path)
+
+        draft.rules[0].content = .path(PathRuleDraft(operator: .doesNotStartWith, text: "/Volumes/Old/"))
+
+        XCTAssertEqual(
+            filter(draft).root.rules, [.path(PathFilter(kind: .startsWith, text: "/Volumes/Old/", negated: true))])
+    }
+
     // MARK: - Editing rules
 
     func test_givenARatingRule_whenChangingItsComparisonAndValue_thenTheFilterFollows() {
@@ -153,7 +172,7 @@ final class RuleGroupDraftTests: XCTestCase {
         var draft = RuleGroupDraft()
         draft.add(.path)
 
-        draft.rules[0].content = .path(PathRuleDraft(kind: .startsWith, text: "/Volumes/Photos/"))
+        draft.rules[0].content = .path(PathRuleDraft(operator: .startsWith, text: "/Volumes/Photos/"))
 
         XCTAssertEqual(filter(draft).root.rules, [.path(PathFilter(kind: .startsWith, text: "/Volumes/Photos/"))])
     }

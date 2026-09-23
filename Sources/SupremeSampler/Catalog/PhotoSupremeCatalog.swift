@@ -387,8 +387,10 @@ struct PhotoSupremeCatalog: Sendable {
     /// and file name ("2019/IMG_"). `ESCAPE '\'` makes `%` and `_` in
     /// the user's text literal (see `PathFilter.likePattern`).
     private static func pathPredicate(_ path: PathFilter) -> SQL {
-        """
-        EXISTS (
+        // EXISTS is never NULL, so negating it is a plain NOT.
+        let negation: SQL = path.negated ? "NOT " : ""
+        return """
+        \(negation)EXISTS (
             SELECT 1 FROM idCache_FilePath fp
             WHERE fp.FilePathGUID = idCatalogItem.PathGUID
               AND (fp.FilePath || idCatalogItem.FileName) LIKE \(path.likePattern) ESCAPE '\\'
@@ -404,6 +406,10 @@ struct PhotoSupremeCatalog: Sendable {
             return "Rating >= \(value)"
         case .atMost(let value):
             return "Rating <= \(value)"
+        case .isNot(let value):
+            // `IS NOT` is SQLite's NULL-safe "not equal": NULL IS NOT 5 is
+            // true, where NULL <> 5 would be NULL (no match).
+            return "Rating IS NOT \(value)"
         }
     }
 

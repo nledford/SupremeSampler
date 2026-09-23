@@ -103,7 +103,7 @@ enum SQLPredicateText {
 
     /// Same shape as `PhotoSupremeCatalog.pathPredicate`.
     private static func pathClause(_ path: PathFilter) -> String {
-        "EXISTS (SELECT 1 FROM idCache_FilePath fp WHERE fp.FilePathGUID = idCatalogItem.PathGUID"
+        (path.negated ? "NOT " : "") + "EXISTS (SELECT 1 FROM idCache_FilePath fp WHERE fp.FilePathGUID = idCatalogItem.PathGUID"
             + " AND (fp.FilePath || idCatalogItem.FileName) LIKE \(SQLStringLiteral.render(path.likePattern))"
             + " ESCAPE '\\')"
     }
@@ -113,6 +113,7 @@ enum SQLPredicateText {
         case .exactly(let value): return "Rating = \(value)"
         case .atLeast(let value): return "Rating >= \(value)"
         case .atMost(let value): return "Rating <= \(value)"
+        case .isNot(let value): return "Rating IS NOT \(value)"
         }
     }
 

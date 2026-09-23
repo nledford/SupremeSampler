@@ -15,4 +15,8 @@ enum RatingFilter: Equatable {
     case exactly(Int)
     case atLeast(Int)
     case atMost(Int)
+    /// Any rating but this one -- including an unknown (NULL) rating,
+    /// which is "not 5" as much as 0 is. The only comparison an unknown
+    /// rating satisfies.
+    case isNot(Int)
 }

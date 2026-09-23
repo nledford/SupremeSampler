@@ -184,7 +184,8 @@ final class PredicateConsistencyTests: XCTestCase {
         switch Int.random(in: 0..<(depth > 0 ? 6 : 5), using: &rng) {
         case 0:
             let value = Int.random(in: 0...5, using: &rng)
-            return .rating([RatingFilter.exactly(value), .atLeast(value), .atMost(value)].randomElement(using: &rng)!)
+            return .rating(
+                [RatingFilter.exactly(value), .atLeast(value), .atMost(value), .isNot(value)].randomElement(using: &rng)!)
         case 1:
             let guids = ["catA", "catB", "catC", "catA-child", "catB-child"]
             let branches = (0..<Int.random(in: 0...2, using: &rng)).map { _ -> CategoryBranch in
@@ -196,7 +197,8 @@ final class PredicateConsistencyTests: XCTestCase {
         case 2:
             let texts = ["", "/2019/", "/travel/", "2019/IMG_", "LE_O", "100%", "Lil’", ".PNG", "/Volumes/Test/", "x\\y"]
             let kind = [PathMatchKind.startsWith, .endsWith, .contains].randomElement(using: &rng)!
-            return .path(PathFilter(kind: kind, text: texts.randomElement(using: &rng)!))
+            return .path(
+                PathFilter(kind: kind, text: texts.randomElement(using: &rng)!, negated: Bool.random(using: &rng)))
         case 3:
             let pool = ["", "Select", "選択", "Red", "O'Brien", "Missing"]
             let labels = (0..<Int.random(in: 0...3, using: &rng)).map { _ in pool.randomElement(using: &rng)! }
@@ -224,11 +226,14 @@ final class PredicateConsistencyTests: XCTestCase {
     private func oracleMatches(_ rule: FilterRule, _ item: FixtureItem) -> Bool {
         switch rule {
         case .rating(let rating):
+            // "Is not" is the one comparison an unknown rating satisfies.
+            if case .isNot(let target) = rating { return item.rating != target }
             guard let value = item.rating else { return false }
             switch rating {
             case .exactly(let target): return value == target
             case .atLeast(let target): return value >= target
             case .atMost(let target): return value <= target
+            case .isNot: fatalError("handled above")
             }
         case .category(let category):
             let tags = Set(item.propGUIDs)
@@ -242,11 +247,13 @@ final class PredicateConsistencyTests: XCTestCase {
             // SQLite's LIKE folds case for A-Z only; so does this.
             let fullPath = asciiLowercased(item.fullPath)
             let text = asciiLowercased(path.text)
+            let matches: Bool
             switch path.kind {
-            case .startsWith: return fullPath.hasPrefix(text)
-            case .endsWith: return fullPath.hasSuffix(text)
-            case .contains: return text.isEmpty || fullPath.contains(text)
+            case .startsWith: matches = fullPath.hasPrefix(text)
+            case .endsWith: matches = fullPath.hasSuffix(text)
+            case .contains: matches = text.isEmpty || fullPath.contains(text)
             }
+            return path.negated ? !matches : matches
         case .label(let label):
             let value = item.label ?? ""
             switch label.mode {
@@ -308,6 +315,7 @@ final class PredicateConsistencyTests: XCTestCase {
             FixtureItem(guid: "video", rating: 0, propGUIDs: [], path: "/Volumes/T/clip.MKV", label: "Red"),
             FixtureItem(guid: "no-ext", rating: nil, propGUIDs: [], path: "/Volumes/T/README"),
             FixtureItem(guid: "trailing-dot", rating: 2, propGUIDs: [], path: "/Volumes/T/odd."),
+            FixtureItem(guid: "negative", rating: -1, propGUIDs: ["catA"]),
         ]
         try makeFixture(items)
         let catalog = try PhotoSupremeCatalog(path: fixturePath)

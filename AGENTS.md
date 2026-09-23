@@ -212,6 +212,12 @@ for instance, so it isn't offered.
   jpg". Listing needs a full scan (~4s), so the model loads it in the
   background after the catalog opens (`loadFileTypes`, cancel-and-
   replace on catalog switch).
+- **Negations**: `RatingFilter.isNot` renders `Rating IS NOT n`,
+  SQLite's NULL-safe inequality, so an unknown rating counts as "not n"
+  — consistent with "none of" groups. `PathFilter.negated` renders
+  `NOT EXISTS`. The label, file type and category rules already
+  have "none of". The UI offers each as one flat operator
+  choice (`RatingComparisonKind.isNot`, `PathOperator`).
 - **Known but not yet offered:** `idBookmark` has meaning lusia
   assigned — 0 none, 2 curated, 3 random uncurated, 4 uncurated,
   5 hidden (`src/domain/mod.rs` there) — and `Rating < 0` is lusia's

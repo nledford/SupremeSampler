@@ -169,6 +169,18 @@ final class SQLPredicateTextTests: XCTestCase {
         XCTAssertEqual(SQLPredicateText.render(filter), "NOT (COALESCE(FileName, '') LIKE '%.mkv' ESCAPE '\\')")
     }
 
+    // MARK: - Negations
+
+    func test_givenRatingIsNot_whenRendering_thenItIsTheNullSafeInequality() {
+        XCTAssertEqual(SQLPredicateText.render(SampleFilter(rating: .isNot(5))), "Rating IS NOT 5")
+    }
+
+    func test_givenANegatedPathRule_whenRendering_thenItIsNotExists() {
+        let filter = SampleFilter(
+            root: RuleGroup(match: .all, rules: [.path(PathFilter(kind: .contains, text: "x", negated: true))]))
+        XCTAssertTrue(SQLPredicateText.render(filter)!.hasPrefix("NOT EXISTS (SELECT 1 FROM idCache_FilePath fp"))
+    }
+
     // MARK: - Combined, and SQL-string-literal escaping of GUID values
 
     func test_givenRatingAndCategory_whenRendering_thenJoinsWithAND() {

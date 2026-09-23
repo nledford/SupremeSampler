@@ -14,6 +14,7 @@ enum RatingComparisonKind: String, CaseIterable, Identifiable, Hashable {
     case exactly = "is"
     case atLeast = "is at least"
     case atMost = "is at most"
+    case isNot = "is not"
 
     var id: String { rawValue }
 }

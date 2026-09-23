@@ -303,10 +303,10 @@ struct PathRuleRow: View {
     var body: some View {
         HStack {
             Text("Path")
-            Picker("Match", selection: $rule.kind) {
-                Text("contains").tag(PathMatchKind.contains)
-                Text("starts with").tag(PathMatchKind.startsWith)
-                Text("ends with").tag(PathMatchKind.endsWith)
+            Picker("Match", selection: $rule.operator) {
+                ForEach(PathOperator.allCases) { pathOperator in
+                    Text(pathOperator.rawValue).tag(pathOperator)
+                }
             }
             .labelsHidden()
             .fixedSize()

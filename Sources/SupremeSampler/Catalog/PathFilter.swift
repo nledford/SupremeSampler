@@ -15,9 +15,17 @@ enum PathMatchKind: Equatable, Hashable, CaseIterable {
 /// Matching ignores letter case for A-Z only, the way SQLite's `LIKE`
 /// does; other letters must match exactly. `text` is literal: `%`, `_`
 /// and `\` mean themselves, not wildcards. Empty text matches every path.
+/// `negated` turns "contains" into "does not contain", and so on.
 struct PathFilter: Equatable {
     let kind: PathMatchKind
     let text: String
+    let negated: Bool
+
+    init(kind: PathMatchKind, text: String, negated: Bool = false) {
+        self.kind = kind
+        self.text = text
+        self.negated = negated
+    }
 
     /// The SQL `LIKE` pattern for this filter, to be used with
     /// `ESCAPE '\'`. Shared by both predicate renderers: it's the one

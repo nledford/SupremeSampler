@@ -22,6 +22,7 @@ struct RatingRuleDraft: Equatable {
         case .exactly: return .exactly(value)
         case .atLeast: return .atLeast(value)
         case .atMost: return .atMost(value)
+        case .isNot: return .isNot(value)
         }
     }
 }
@@ -33,10 +34,38 @@ struct CategoryRuleDraft: Equatable {
     var selectedGUIDs: Set<String> = []
 }
 
-/// A file-path rule as the controls see it: "Path [starts with / ends
-/// with / contains] [text]".
+/// The path rule's operator picker: each match kind, plain or negated,
+/// as one flat choice -- a `Picker` binds to one plain value, the same
+/// reason `RatingComparisonKind` exists.
+enum PathOperator: String, CaseIterable, Identifiable, Hashable {
+    case contains = "contains"
+    case doesNotContain = "does not contain"
+    case startsWith = "starts with"
+    case doesNotStartWith = "does not start with"
+    case endsWith = "ends with"
+    case doesNotEndWith = "does not end with"
+
+    var id: String { rawValue }
+
+    var kind: PathMatchKind {
+        switch self {
+        case .contains, .doesNotContain: return .contains
+        case .startsWith, .doesNotStartWith: return .startsWith
+        case .endsWith, .doesNotEndWith: return .endsWith
+        }
+    }
+
+    var isNegated: Bool {
+        switch self {
+        case .doesNotContain, .doesNotStartWith, .doesNotEndWith: return true
+        case .contains, .startsWith, .endsWith: return false
+        }
+    }
+}
+
+/// A file-path rule as the controls see it: "Path [operator] [text]".
 struct PathRuleDraft: Equatable {
-    var kind: PathMatchKind = .contains
+    var `operator`: PathOperator = .contains
     var text: String = ""
 }
 
@@ -137,7 +166,7 @@ struct RuleGroupDraft: Identifiable, Equatable {
                             mode: category.mode
                         ))
                 case .path(let path):
-                    return .path(PathFilter(kind: path.kind, text: path.text))
+                    return .path(PathFilter(kind: path.operator.kind, text: path.text, negated: path.operator.isNegated))
                 case .label(let label):
                     // Sorted: the selection is a `Set`, whose order must
                     // not leak into the generated script.

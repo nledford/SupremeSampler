@@ -690,6 +690,47 @@ final class PhotoSupremeCatalogTests: XCTestCase {
         XCTAssertEqual(matches, 1)
     }
 
+    // MARK: - Negated comparisons
+
+    func test_givenRatingIsNot_whenCountingMatches_thenEveryOtherRatingMatchesIncludingUnknown() async throws {
+        try makeFixture([
+            FixtureItem(guid: "negative", rating: -1),
+            FixtureItem(guid: "unrated", rating: 0),
+            FixtureItem(guid: "rated", rating: 4),
+            FixtureItem(guid: "null", rating: nil),
+        ])
+
+        let matches = try await PhotoSupremeCatalog(path: fixturePath).matchingItemCount(
+            for: SampleFilter(rating: .isNot(4)))
+
+        XCTAssertEqual(matches, 3, "-1, 0 and the NULL rating are all 'not 4'")
+    }
+
+    func test_givenPathDoesNotContain_whenCountingMatches_thenThosePathsAreExcluded() async throws {
+        try makePathFixture()
+
+        let matches = try await PhotoSupremeCatalog(path: fixturePath).matchingItemCount(
+            for: SampleFilter(
+                root: RuleGroup(match: .all, rules: [.path(PathFilter(kind: .contains, text: "/travel/", negated: true))])))
+
+        XCTAssertEqual(matches, 5)
+    }
+
+    func test_givenPathDoesNotStartOrEndWith_whenCountingMatches_thenTheNegationHolds() async throws {
+        try makePathFixture()
+        let catalog = try PhotoSupremeCatalog(path: fixturePath)
+
+        let notUnderPhotos = try await catalog.matchingItemCount(
+            for: SampleFilter(
+                root: RuleGroup(match: .all, rules: [.path(PathFilter(kind: .startsWith, text: "/Volumes/Photos/", negated: true))])))
+        let notJPG = try await catalog.matchingItemCount(
+            for: SampleFilter(
+                root: RuleGroup(match: .all, rules: [.path(PathFilter(kind: .endsWith, text: ".jpg", negated: true))])))
+
+        XCTAssertEqual(notUnderPhotos, 1)
+        XCTAssertEqual(notJPG, 1, "only scan.png")
+    }
+
     // MARK: - matchingItemCount: combined rating + category
 
     func test_givenRatingAndCategoryFilters_whenCountingMatches_thenBothMustMatch() async throws {
