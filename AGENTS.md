@@ -50,8 +50,11 @@ The save panel is behind `ScriptDestinationChoosing` (a port, like
 `ClipboardWriting`), so `ScriptSavingTests` saves real files through a
 fake panel. Save is gated on `canSaveScript` (catalog open, count
 finished) per PRODUCT.md's pre-flight principle; `lastSavedScriptURL`
-is derived — shown only while the on-screen filter and size still match
-the saved file. File > Save Script… (⌘S) reaches the front window via
+is derived — shown only while the on-screen filter, size and folder
+balance still match the saved file. Folder balance is a three-segment
+`Picker` under the sample size (Off / Balanced / Equal), not a toggle
+plus slider: Off is one end of the same scale, and in-between values
+wouldn't mean anything. File > Save Script… (⌘S) reaches the front window via
 `@FocusedValue`/`.focusedSceneValue` (`SaveScriptCommands`), unlike
 Open Catalog…'s older global notification.
 

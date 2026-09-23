@@ -48,13 +48,15 @@ final class SampleBuilderModel {
     /// Why the last save failed, if it did; cleared by the next success.
     private(set) var saveErrorMessage: String?
 
-    /// What was last written to disk, and from which filter/size -- kept
+    /// What was last written to disk, and from which filter, size and
+    /// folder balance -- kept
     /// so `lastSavedScriptURL` can tell whether the script on screen
     /// still matches that file.
     private struct SavedScript {
         let url: URL
         let filter: SampleFilter
         let sampleSize: Int
+        let folderBalance: FolderBalance
     }
     private var lastSave: SavedScript?
 
@@ -139,6 +141,10 @@ final class SampleBuilderModel {
         }
     }
 
+    /// How the sample spreads across folders (see `FolderBalance`). Off
+    /// by default, so a script is the plain random sample unless asked.
+    var folderBalance: FolderBalance = .off
+
     /// Everything in the rule builder: the root "Match all/any/none of"
     /// group and its (possibly nested) rules. Starts empty, which
     /// matches the whole catalog.
@@ -157,7 +163,7 @@ final class SampleBuilderModel {
     /// actually re-renders when this (or whatever it reads) changes, so
     /// there's no need to cache it by hand.
     var generatedScript: String {
-        RandomSampleScriptGenerator.generate(sampleSize: sampleSize, filter: currentFilter)
+        RandomSampleScriptGenerator.generate(sampleSize: sampleSize, filter: currentFilter, folderBalance: folderBalance)
     }
 
     /// Opens `path` and loads its category list, then kicks off a match
@@ -266,7 +272,9 @@ final class SampleBuilderModel {
     /// or the sample size hides it, and undoing the edit brings it back,
     /// with no bookkeeping to forget.
     var lastSavedScriptURL: URL? {
-        guard let lastSave, lastSave.filter == currentFilter, lastSave.sampleSize == sampleSize else { return nil }
+        guard let lastSave, lastSave.filter == currentFilter, lastSave.sampleSize == sampleSize,
+            lastSave.folderBalance == folderBalance
+        else { return nil }
         return lastSave.url
     }
 
@@ -284,10 +292,11 @@ final class SampleBuilderModel {
 
         let filter = currentFilter
         let size = sampleSize
-        let script = RandomSampleScriptGenerator.generate(sampleSize: size, filter: filter)
+        let balance = folderBalance
+        let script = RandomSampleScriptGenerator.generate(sampleSize: size, filter: filter, folderBalance: balance)
         do {
             try PSCFile.encode(script).write(to: destination, options: .atomic)
-            lastSave = SavedScript(url: destination, filter: filter, sampleSize: size)
+            lastSave = SavedScript(url: destination, filter: filter, sampleSize: size, folderBalance: balance)
             saveErrorMessage = nil
         } catch {
             lastSave = nil

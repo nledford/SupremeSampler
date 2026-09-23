@@ -231,6 +231,14 @@ final class ViewRenderingTests: XCTestCase {
         _ = RatingRuleRow(rule: .constant(RatingRuleDraft(comparison: .atMost, value: 0)), onRemove: {}).body
     }
 
+    func test_givenEachFolderBalance_whenBuildingSampleBuilderView_thenBodyDoesNotCrash() {
+        for balance in FolderBalance.allCases {
+            let model = SampleBuilderModel.forTesting()
+            model.folderBalance = balance
+            _ = SampleBuilderView(model: model).body
+        }
+    }
+
     func test_givenCountingMatches_whenBuildingSampleBuilderView_thenBodyDoesNotCrash() {
         // isCountingMatches is set synchronously at the start of
         // refreshMatchingCount(), before the query itself runs, so this

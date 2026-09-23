@@ -162,6 +162,22 @@ final class SampleBuilderModelTests: XCTestCase {
         XCTAssertTrue(model.generatedScript.contains("''prop-tall-pines''"))
     }
 
+    func test_givenANewModel_whenReadingFolderBalance_thenItIsOffSoScriptsAreUnchanged() {
+        let model = SampleBuilderModel.forTesting()
+
+        XCTAssertEqual(model.folderBalance, .off)
+        XCTAssertFalse(model.generatedScript.contains("BalancedItemGUIDs"))
+    }
+
+    func test_givenFolderBalanceChosen_whenGeneratingScript_thenTheScriptUsesIt() {
+        let model = SampleBuilderModel.forTesting()
+
+        model.folderBalance = .balanced
+
+        XCTAssertTrue(model.generatedScript.contains("  AGUIDs := BalancedItemGUIDs(SAMPLE_SIZE);"))
+        XCTAssertTrue(model.generatedScript.contains("Folder balance: Balanced"))
+    }
+
     func test_givenTheSameSelection_whenGeneratingScriptRepeatedly_thenTheCategoryClauseIsIdentical() {
         // The selection is a `Set`; its iteration order must not leak
         // into the script text (scripts get committed, so reordering

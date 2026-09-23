@@ -156,6 +156,27 @@ final class ScriptSavingTests: XCTestCase {
         XCTAssertNil(model.lastSavedScriptURL)
     }
 
+    func test_givenTheFolderBalanceChangedAfterSaving_whenLookingAtTheLastSave_thenItIsCleared() async {
+        let model = await modelReadyToSave()
+        await model.saveScript(using: FakeDestinationChooser(answer: folder.appendingPathComponent("A.psc")), startingIn: nil)
+
+        model.folderBalance = .balanced
+
+        XCTAssertNil(model.lastSavedScriptURL)
+    }
+
+    func test_givenFolderBalanceOn_whenSaving_thenTheFileHoldsTheBalancedScript() async throws {
+        let model = await modelReadyToSave()
+        model.folderBalance = .equal
+        let destination = folder.appendingPathComponent("Equal.psc")
+
+        await model.saveScript(using: FakeDestinationChooser(answer: destination), startingIn: nil)
+
+        let saved = try String(contentsOf: destination, encoding: .utf8)
+        XCTAssertTrue(saved.contains("  AGUIDs := BalancedItemGUIDs(SAMPLE_SIZE);"))
+        XCTAssertEqual(model.lastSavedScriptURL, destination)
+    }
+
     func test_givenAnEditIsUndoneAfterSaving_whenLookingAtTheLastSave_thenItShowsAgain() async {
         // The status tracks whether the on-screen script matches the
         // file, so returning to the saved state brings it back.

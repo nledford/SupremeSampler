@@ -87,6 +87,8 @@ struct SampleBuilderView: View {
                         }
                     }
                 }
+
+                folderBalanceRow
             }
 
             Section("Rules") {
@@ -111,6 +113,34 @@ struct SampleBuilderView: View {
         // doesn't include it.
         .onChange(of: model.currentFilter) {
             model.refreshMatchingCount()
+        }
+    }
+
+    /// One segmented control rather than a toggle plus a slider: "Off" is
+    /// just one end of the scale, and the three presets differ visibly
+    /// where arbitrary values between them wouldn't. `.tag(...)` is what
+    /// the `Picker` writes into its binding when that segment is chosen,
+    /// like an `<option value>` in HTML.
+    private var folderBalanceRow: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Picker("Folder balance", selection: $model.folderBalance) {
+                ForEach(FolderBalance.allCases, id: \.self) { balance in
+                    Text(balance.displayName).tag(balance)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            Text(folderBalanceExplanation)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var folderBalanceExplanation: String {
+        switch model.folderBalance {
+        case .off: return "Every photo equally likely, so big folders dominate."
+        case .balanced: return "Folders weighted by the square root of their size."
+        case .equal: return "Every folder equally likely, whatever its size."
         }
     }
 
