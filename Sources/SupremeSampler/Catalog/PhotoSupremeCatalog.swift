@@ -267,16 +267,39 @@ struct PhotoSupremeCatalog: Sendable {
     /// for `self` -- closer to a free function in Rust/Python than to an
     /// instance method, just namespaced under the type instead of the
     /// module.
+    ///
+    /// Mirrors `SQLPredicateText.render` rule for rule (same grouping,
+    /// same COALESCE under "none of") -- see that type for the reasoning;
+    /// `PredicateConsistencyTests` checks both against the same rules.
     private static func predicate(for filter: SampleFilter) -> SQL {
-        var literal: SQL = "1 = 1"
+        groupPredicate(filter.root)
+    }
 
-        if let rating = filter.rating {
-            literal = "\(literal) AND \(ratingPredicate(rating))"
+    private static func rulePredicate(_ rule: FilterRule) -> SQL {
+        switch rule {
+        case .rating(let rating): return ratingPredicate(rating)
+        case .category(let category): return categoryPredicate(category)
+        case .group(let group): return groupPredicate(group)
         }
-        if let category = filter.category {
-            literal = "\(literal) AND \(categoryPredicate(category))"
+    }
+
+    /// Always parenthesized here, even at the root: unlike the script
+    /// text, this SQL is never read by a person, so there's no reason to
+    /// special-case the top level.
+    private static func groupPredicate(_ group: RuleGroup) -> SQL {
+        guard !group.rules.isEmpty else {
+            switch group.match {
+            case .any: return "0 = 1"
+            case .all, .none: return "1 = 1"
+            }
         }
-        return literal
+
+        let predicates = group.rules.map(rulePredicate)
+        switch group.match {
+        case .all: return "(\(predicates.joined(separator: " AND ")))"
+        case .any: return "(\(predicates.joined(separator: " OR ")))"
+        case .none: return "NOT COALESCE((\(predicates.joined(separator: " OR "))), 0)"
+        }
     }
 
     private static func ratingPredicate(_ rating: RatingFilter) -> SQL {

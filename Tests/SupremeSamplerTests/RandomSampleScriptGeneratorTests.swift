@@ -183,6 +183,54 @@ final class RandomSampleScriptGeneratorTests: XCTestCase {
         XCTAssertTrue(script.contains("d.GUID IN (''O''''Brien'')"))
     }
 
+    // MARK: - Rule groups
+
+    func test_givenAnAnyOfRootGroup_whenGenerating_thenBothQueriesKeepTheORInsideParentheses() {
+        // The sampling query appends the predicate after
+        // `rowid IN (...) AND`; an unparenthesized OR there would match
+        // photos outside the random batch.
+        let filter = SampleFilter(root: RuleGroup(match: .any, rules: [.rating(.exactly(5)), .rating(.exactly(1))]))
+        let script = RandomSampleScriptGenerator.generate(sampleSize: 100, filter: filter, generatedAt: fixedDate)
+
+        XCTAssertTrue(script.contains("FROM idCatalogItem WHERE (Rating = 5 OR Rating = 1)';"))
+        XCTAssertTrue(script.contains("ACandidates.CommaText + ') AND (Rating = 5 OR Rating = 1)';"))
+    }
+
+    func test_givenNestedGroups_whenGenerating_thenHeaderSummarizesTheTreeIndented() {
+        let filter = SampleFilter(
+            root: RuleGroup(
+                match: .all,
+                rules: [
+                    .rating(.atLeast(4)),
+                    .group(
+                        RuleGroup(
+                            match: .none,
+                            rules: [.category(CategoryFilter(propGUIDs: ["A"], mode: .any))])),
+                ]))
+        let script = RandomSampleScriptGenerator.generate(sampleSize: 100, filter: filter, generatedAt: fixedDate)
+
+        XCTAssertTrue(
+            script.contains(
+                """
+                  Rating filter: at least 4
+                  Match none of:
+                    Category filter: any of 1 categories (including subcategories)
+                """))
+    }
+
+    func test_givenAnAnyOfRootGroup_whenGenerating_thenHeaderSaysSoBeforeItsRules() {
+        let filter = SampleFilter(root: RuleGroup(match: .any, rules: [.rating(.exactly(5)), .rating(.exactly(1))]))
+        let script = RandomSampleScriptGenerator.generate(sampleSize: 100, filter: filter, generatedAt: fixedDate)
+
+        XCTAssertTrue(
+            script.contains(
+                """
+                  Match any of:
+                    Rating filter: exactly 5
+                    Rating filter: exactly 1
+                """))
+    }
+
     // MARK: - Header
 
     func test_givenFilter_whenGenerating_thenHeaderSummarizesIt() {
@@ -248,6 +296,13 @@ final class RandomSampleScriptGeneratorTests: XCTestCase {
             SampleFilter(rating: .exactly(5)),
             SampleFilter(category: CategoryFilter(propGUIDs: ["A", "B", "C"], mode: .all)),
             SampleFilter(rating: .atMost(2), category: CategoryFilter(propGUIDs: ["A"], mode: .none)),
+            SampleFilter(
+                root: RuleGroup(
+                    match: .none,
+                    rules: [
+                        .rating(.exactly(1)),
+                        .group(RuleGroup(match: .any, rules: [.category(CategoryFilter(propGUIDs: ["O'B"], mode: .all))])),
+                    ])),
         ] {
             let script = RandomSampleScriptGenerator.generate(sampleSize: 100, filter: filter, generatedAt: fixedDate)
             let lines = script.split(separator: "\n", omittingEmptySubsequences: false).map {
@@ -273,6 +328,13 @@ final class RandomSampleScriptGeneratorTests: XCTestCase {
             SampleFilter(rating: .exactly(5)),
             SampleFilter(category: CategoryFilter(propGUIDs: ["A", "B", "C"], mode: .all)),
             SampleFilter(rating: .atMost(2), category: CategoryFilter(propGUIDs: ["A"], mode: .none)),
+            SampleFilter(
+                root: RuleGroup(
+                    match: .none,
+                    rules: [
+                        .rating(.exactly(1)),
+                        .group(RuleGroup(match: .any, rules: [.category(CategoryFilter(propGUIDs: ["O'B"], mode: .all))])),
+                    ])),
         ] {
             let script = RandomSampleScriptGenerator.generate(sampleSize: 100, filter: filter, generatedAt: fixedDate)
             let code = strippingComments(script)

@@ -268,13 +268,25 @@ touching it:
   script) and `PhotoSupremeCatalog`'s private predicate builder (GRDB-
   parameterized, for live queries) implement the same rating/category
   rules twice, deliberately not unified — see `SQLPredicateText`'s doc
-  comment for why. **If you change what a `RatingFilter` or
-  `CategoryFilter` case means, change it in both places**, and keep
-  `PredicateConsistencyTests` passing — it runs both implementations
-  against the same fixture and asserts they agree on every row. Swift's
-  exhaustive `switch` catches a *new* unhandled case automatically; only
-  this test catches a *semantic* change to an existing case made in one
-  file and not the other.
+  comment for why. **If you change what a `RatingFilter`,
+  `CategoryFilter`, or `GroupMatch` case means, change it in both
+  places**, and keep `PredicateConsistencyTests` passing — it runs both
+  implementations against the same fixture, and also checks both
+  against an in-memory reference (`oracleMatches`) over 500 seeded
+  random rule trees. Agreement alone isn't enough: both renderers could
+  share a mistake. Swift's exhaustive `switch` catches a *new* unhandled
+  case automatically; only this test catches a *semantic* change to an
+  existing case made in one file and not the other.
+- **Filters are a rule tree** (`SampleFilter.swift`): a root
+  `RuleGroup` whose `GroupMatch` is all/any/none of its `FilterRule`s,
+  where a rule may be a nested group — Lightroom Smart Collection's
+  model. "None of" is the exclude mechanism. Two rendering rules matter:
+  a root "all of" renders bare (`a AND b`, identical to pre-group
+  output) and every other group is self-delimited, because the sampling
+  query appends the predicate after `rowid IN (...) AND`; and "none of"
+  renders `NOT COALESCE((...), 0)`, because `Rating` is nullable in the
+  real schema and a plain `NOT` of NULL stays NULL, silently dropping an
+  unrated photo from both a rule and its negation.
 - **The generator's boilerplate is hand-transcribed from the real,
   committed, verified-compiling-and-running
   `~/Projects/pascal/photo supreme/RandomCatalogSample.psc`**,

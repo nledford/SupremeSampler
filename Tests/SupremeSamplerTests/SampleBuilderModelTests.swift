@@ -99,7 +99,7 @@ final class SampleBuilderModelTests: XCTestCase {
         model.ratingValue = 4
         model.ratingEnabled = false
 
-        XCTAssertNil(model.currentFilter.rating)
+        XCTAssertEqual(model.currentFilter, SampleFilter())
     }
 
     func test_givenCategoryEnabled_whenComputingCurrentFilter_thenIncludesCategoryFilter() {
@@ -108,9 +108,9 @@ final class SampleBuilderModelTests: XCTestCase {
         model.categoryMode = .all
         model.selectedCategoryGUIDs = ["g1", "g2"]
 
-        let category = model.currentFilter.category
-        XCTAssertEqual(category?.mode, .all)
-        XCTAssertEqual(category?.branches.map(\.rootGUID), ["g1", "g2"])
+        XCTAssertEqual(
+            model.currentFilter,
+            SampleFilter(category: CategoryFilter(propGUIDs: ["g1", "g2"], mode: .all)))
     }
 
     // MARK: - Selecting a parent category selects its whole branch
@@ -131,9 +131,10 @@ final class SampleBuilderModelTests: XCTestCase {
         model.categoryEnabled = true
         model.selectedCategoryGUIDs = ["prop-pines"]
 
+        let pinesBranch = CategoryBranch(rootGUID: "prop-pines", propGUIDs: ["prop-pines", "prop-tall-pines"])
         XCTAssertEqual(
-            model.currentFilter.category?.branches,
-            [CategoryBranch(rootGUID: "prop-pines", propGUIDs: ["prop-pines", "prop-tall-pines"])])
+            model.currentFilter,
+            SampleFilter(category: CategoryFilter(branches: [pinesBranch], mode: .any)))
     }
 
     func test_givenAParentCategorySelected_whenGeneratingScript_thenTheScriptMatchesItsDescendants() {
@@ -177,9 +178,9 @@ final class SampleBuilderModelTests: XCTestCase {
         model.categoryMode = .any
         model.selectedCategoryGUIDs = ["g1"]
 
-        let filter = model.currentFilter
-        XCTAssertEqual(filter.rating, .exactly(5))
-        XCTAssertEqual(filter.category, CategoryFilter(propGUIDs: ["g1"], mode: .any))
+        XCTAssertEqual(
+            model.currentFilter,
+            SampleFilter(rating: .exactly(5), category: CategoryFilter(propGUIDs: ["g1"], mode: .any)))
     }
 
     func test_givenSampleSizeAndFilter_whenGeneratingScript_thenReflectsCurrentState() {

@@ -119,8 +119,9 @@ locally; it is not published by IDimager.
 - Saving the generated script to disk, replacing clipboard-only as the save
   action.
 - More filter dimensions beyond rating and category.
-- A filtering refactor to support subgroups, and including/excluding photos
-  based on filters.
+- A rule-builder UI for nested groups and including/excluding photos. The
+  filter model and both SQL renderers already support it (all/any/none-of
+  groups, nested); the UI still builds a single flat "all of" group.
 
 **Platform vocabulary gap:** this is a native macOS app, but the Impeccable
 product schema only recognizes `web`, `ios`, `android`, and `adaptive`. The

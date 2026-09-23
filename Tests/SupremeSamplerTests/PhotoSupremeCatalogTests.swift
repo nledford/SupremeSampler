@@ -34,10 +34,12 @@ final class PhotoSupremeCatalogTests: XCTestCase {
     /// importable from anywhere else.
     private struct FixtureItem {
         let guid: String
-        let rating: Int
+        /// `nil` writes SQL NULL -- the real schema allows it (`Rating
+        /// float(22)`, no NOT NULL), though no real rows are NULL today.
+        let rating: Int?
         let propGUIDs: [String]
 
-        init(guid: String = UUID().uuidString, rating: Int = 0, propGUIDs: [String] = []) {
+        init(guid: String = UUID().uuidString, rating: Int? = 0, propGUIDs: [String] = []) {
             self.guid = guid
             self.rating = rating
             self.propGUIDs = propGUIDs
@@ -58,7 +60,7 @@ final class PhotoSupremeCatalogTests: XCTestCase {
                 sql: """
                     CREATE TABLE idCatalogItem (
                         GUID TEXT PRIMARY KEY,
-                        Rating INTEGER NOT NULL DEFAULT 0
+                        Rating INTEGER
                     )
                     """)
             try db.execute(
@@ -173,7 +175,7 @@ final class PhotoSupremeCatalogTests: XCTestCase {
 
     func test_givenRatingFilters_whenCountingMatches_thenComparesCorrectly() async throws {
         // One item per rating value 0...5.
-        try makeFixture((0...5).map { FixtureItem(guid: "item-\($0)", rating: $0) })
+        try makeFixture((0...5).map { (n: Int) in FixtureItem(guid: "item-\(n)", rating: n) })
         let catalog = try PhotoSupremeCatalog(path: fixturePath)
 
         let exactlyThree = try await catalog.matchingItemCount(for: SampleFilter(rating: .exactly(3)))
@@ -346,6 +348,84 @@ final class PhotoSupremeCatalogTests: XCTestCase {
         XCTAssertEqual(count, 2, "only untagged and lake-only have no pines keyword")
     }
 
+    // MARK: - matchingItemCount: rule groups (all / any / none of, nested)
+
+    /// One photo per rating 1...5, plus an unrated-NULL photo; the
+    /// 4- and 5-star photos also carry catA.
+    private func makeRuleGroupFixture() throws {
+        try makeFixture([
+            FixtureItem(guid: "r1", rating: 1),
+            FixtureItem(guid: "r2", rating: 2),
+            FixtureItem(guid: "r3", rating: 3),
+            FixtureItem(guid: "r4-a", rating: 4, propGUIDs: ["catA"]),
+            FixtureItem(guid: "r5-a", rating: 5, propGUIDs: ["catA"]),
+            FixtureItem(guid: "null-rating", rating: nil),
+        ])
+    }
+
+    private func count(_ root: RuleGroup) async throws -> Int {
+        try await PhotoSupremeCatalog(path: fixturePath).matchingItemCount(for: SampleFilter(root: root))
+    }
+
+    func test_givenAnAnyOfGroup_whenCountingMatches_thenAPhotoMatchingEitherRuleCounts() async throws {
+        try makeRuleGroupFixture()
+
+        let matches = try await count(
+            RuleGroup(match: .any, rules: [.rating(.exactly(1)), .rating(.exactly(5))]))
+
+        XCTAssertEqual(matches, 2)
+    }
+
+    func test_givenANoneOfGroup_whenCountingMatches_thenPhotosMatchingAnyRuleAreExcluded() async throws {
+        try makeRuleGroupFixture()
+
+        let matches = try await count(
+            RuleGroup(match: .none, rules: [.rating(.atLeast(4)), .rating(.exactly(1))]))
+
+        XCTAssertEqual(matches, 3, "r2, r3, and the NULL-rated photo")
+    }
+
+    func test_givenANullRating_whenCountingNoneOfARatingRule_thenThePhotoIsNotExcluded() async throws {
+        // SQL's three-valued logic: `NOT (Rating >= 3)` is NULL, not
+        // true, for a NULL rating -- so a naive NOT would drop the photo
+        // from both "rating >= 3" and "none of [rating >= 3]". An unknown
+        // result counts as "didn't match", so "none of" must keep it.
+        try makeRuleGroupFixture()
+
+        let matchesRule = try await count(RuleGroup(match: .all, rules: [.rating(.atLeast(3))]))
+        let matchesNoneOf = try await count(RuleGroup(match: .none, rules: [.rating(.atLeast(3))]))
+
+        XCTAssertEqual(matchesRule + matchesNoneOf, 6, "every photo lands on exactly one side")
+    }
+
+    func test_givenANestedGroup_whenCountingMatches_thenItCombinesWithItsParent() async throws {
+        // all of: [ rating >= 3, none of: [ has catA ] ] -- i.e. 3+ stars
+        // but not tagged catA.
+        try makeRuleGroupFixture()
+
+        let matches = try await count(
+            RuleGroup(
+                match: .all,
+                rules: [
+                    .rating(.atLeast(3)),
+                    .group(RuleGroup(match: .none, rules: [.category(CategoryFilter(propGUIDs: ["catA"], mode: .any))])),
+                ]))
+
+        XCTAssertEqual(matches, 1, "only r3")
+    }
+
+    func test_givenEmptyGroups_whenCountingMatches_thenAnyOfMatchesNothingAndAllOrNoneOfMatchEverything() async throws {
+        try makeRuleGroupFixture()
+
+        let anyOfNothing = try await count(RuleGroup(match: .any, rules: []))
+        let allOfNothing = try await count(RuleGroup(match: .all, rules: []))
+        let noneOfNothing = try await count(RuleGroup(match: .none, rules: []))
+
+        XCTAssertEqual(anyOfNothing, 0)
+        XCTAssertEqual(allOfNothing, 6)
+        XCTAssertEqual(noneOfNothing, 6)
+    }
+
     // MARK: - matchingItemCount: combined rating + category
 
     func test_givenRatingAndCategoryFilters_whenCountingMatches_thenBothMustMatch() async throws {
@@ -402,7 +482,7 @@ final class PhotoSupremeCatalogTests: XCTestCase {
     }
 
     func test_givenRatingFilter_whenSampling_thenEveryResultSatisfiesTheFilter() async throws {
-        try makeFixture((0...5).map { FixtureItem(guid: "item-\($0)", rating: $0) })
+        try makeFixture((0...5).map { (n: Int) in FixtureItem(guid: "item-\(n)", rating: n) })
         let catalog = try PhotoSupremeCatalog(path: fixturePath)
 
         let guids = try await catalog.sampleGUIDs(count: 3, matching: SampleFilter(rating: .atLeast(3)))

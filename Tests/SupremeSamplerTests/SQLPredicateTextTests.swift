@@ -75,6 +75,50 @@ final class SQLPredicateTextTests: XCTestCase {
             SQLPredicateText.render(SampleFilter(category: CategoryFilter(propGUIDs: [], mode: .none))), "1 = 1")
     }
 
+    // MARK: - Rule groups
+
+    // A top-level "all of" group renders bare (`a AND b`), exactly as
+    // before groups existed. Every other group is self-delimiting, so it
+    // can be appended after `rowid IN (...) AND` in the sampling query
+    // without an OR leaking out.
+
+    func test_givenAnAnyOfRootGroup_whenRendering_thenJoinsWithORInParentheses() {
+        let filter = SampleFilter(root: RuleGroup(match: .any, rules: [.rating(.exactly(5)), .rating(.exactly(1))]))
+        XCTAssertEqual(SQLPredicateText.render(filter), "(Rating = 5 OR Rating = 1)")
+    }
+
+    func test_givenANoneOfGroup_whenRendering_thenNegatesTreatingUnknownAsNotMatched() {
+        let filter = SampleFilter(root: RuleGroup(match: .none, rules: [.rating(.atLeast(4)), .rating(.exactly(1))]))
+        XCTAssertEqual(SQLPredicateText.render(filter), "NOT COALESCE((Rating >= 4 OR Rating = 1), 0)")
+    }
+
+    func test_givenANestedAllOfGroup_whenRendering_thenItIsParenthesized() {
+        let filter = SampleFilter(
+            root: RuleGroup(
+                match: .any,
+                rules: [
+                    .rating(.exactly(5)),
+                    .group(RuleGroup(match: .all, rules: [.rating(.atLeast(2)), .rating(.atMost(3))])),
+                ]))
+        XCTAssertEqual(SQLPredicateText.render(filter), "(Rating = 5 OR (Rating >= 2 AND Rating <= 3))")
+    }
+
+    func test_givenEmptyNestedGroups_whenRendering_thenRendersVacuousTruthValues() {
+        let filter = SampleFilter(
+            root: RuleGroup(
+                match: .all,
+                rules: [
+                    .group(RuleGroup(match: .any, rules: [])),
+                    .group(RuleGroup(match: .all, rules: [])),
+                    .group(RuleGroup(match: .none, rules: [])),
+                ]))
+        XCTAssertEqual(SQLPredicateText.render(filter), "0 = 1 AND 1 = 1 AND 1 = 1")
+    }
+
+    func test_givenAnEmptyAnyOfRootGroup_whenRendering_thenStillRendersAClause() {
+        XCTAssertEqual(SQLPredicateText.render(SampleFilter(root: RuleGroup(match: .any, rules: []))), "0 = 1")
+    }
+
     // MARK: - Combined, and SQL-string-literal escaping of GUID values
 
     func test_givenRatingAndCategory_whenRendering_thenJoinsWithAND() {

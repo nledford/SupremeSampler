@@ -30,16 +30,47 @@ enum SQLPredicateText {
     /// `nil` when `filter` is unconstrained (no WHERE clause needed at
     /// all); otherwise the combined boolean expression, e.g.
     /// `"Rating >= 3"` or `"Rating >= 3 AND idCatalogItem.GUID IN (...)"`.
+    ///
+    /// A top-level "all of" group renders bare (`a AND b`), unchanged
+    /// from before groups existed. Every other group renders
+    /// self-delimited -- `(a OR b)`, `NOT COALESCE((a OR b), 0)` -- so
+    /// the whole predicate can follow `rowid IN (...) AND` in the
+    /// generated sampling query without an OR escaping.
     static func render(_ filter: SampleFilter) -> String? {
-        var clauses: [String] = []
-        if let rating = filter.rating {
-            clauses.append(ratingClause(rating))
+        guard !filter.isUnconstrained else { return nil }
+        return groupClause(filter.root, isRoot: true)
+    }
+
+    private static func ruleClause(_ rule: FilterRule) -> String {
+        switch rule {
+        case .rating(let rating): return ratingClause(rating)
+        case .category(let category): return categoryClause(category)
+        case .group(let group): return groupClause(group, isRoot: false)
         }
-        if let category = filter.category {
-            clauses.append(categoryClause(category))
+    }
+
+    private static func groupClause(_ group: RuleGroup, isRoot: Bool) -> String {
+        guard !group.rules.isEmpty else {
+            // Vacuous: "all/none of nothing" is true, "any of nothing" false.
+            switch group.match {
+            case .any: return "0 = 1"
+            case .all, .none: return "1 = 1"
+            }
         }
-        guard !clauses.isEmpty else { return nil }
-        return clauses.joined(separator: " AND ")
+
+        let clauses = group.rules.map(ruleClause)
+        switch group.match {
+        case .all:
+            let joined = clauses.joined(separator: " AND ")
+            return isRoot ? joined : "(" + joined + ")"
+        case .any:
+            return "(" + clauses.joined(separator: " OR ") + ")"
+        case .none:
+            // COALESCE turns an undecidable (NULL) result into "didn't
+            // match" *before* negating; a plain NOT would leave it NULL,
+            // silently excluding the photo from both sides.
+            return "NOT COALESCE((" + clauses.joined(separator: " OR ") + "), 0)"
+        }
     }
 
     private static func ratingClause(_ rating: RatingFilter) -> String {

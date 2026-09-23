@@ -36,7 +36,7 @@ final class PredicateConsistencyTests: XCTestCase {
 
     private struct FixtureItem {
         let guid: String
-        let rating: Int
+        let rating: Int?
         let propGUIDs: [String]
     }
 
@@ -48,7 +48,7 @@ final class PredicateConsistencyTests: XCTestCase {
                 sql: """
                     CREATE TABLE idCatalogItem (
                         GUID TEXT PRIMARY KEY,
-                        Rating INTEGER NOT NULL DEFAULT 0
+                        Rating INTEGER
                     )
                     """)
             try db.execute(
@@ -138,6 +138,107 @@ final class PredicateConsistencyTests: XCTestCase {
             XCTAssertEqual(
                 viaGRDB, viaRawText,
                 "PhotoSupremeCatalog and SQLPredicateText disagree for filter \(filter)")
+        }
+    }
+
+    // MARK: - Randomized rule trees
+
+    /// SplitMix64 -- a tiny, fixed-seed random generator, so a failing
+    /// tree reproduces on every run. Swift's built-in generator can't be
+    /// seeded; conforming to `RandomNumberGenerator` (a protocol, like a
+    /// Rust trait) lets it drive the standard `randomElement(using:)`
+    /// and `Int.random(in:using:)` APIs, the same way Rust's `rand`
+    /// crate takes any `impl Rng`.
+    private struct SeededGenerator: RandomNumberGenerator {
+        var state: UInt64
+        mutating func next() -> UInt64 {
+            state &+= 0x9E37_79B9_7F4A_7C15
+            var z = state
+            z = (z ^ (z >> 30)) &* 0xBF58_476D_1CE4_E5B9
+            z = (z ^ (z >> 27)) &* 0x94D0_49BB_1331_11EB
+            return z ^ (z >> 31)
+        }
+    }
+
+    private func randomRule(depth: Int, using rng: inout SeededGenerator) -> FilterRule {
+        switch Int.random(in: 0..<(depth > 0 ? 3 : 2), using: &rng) {
+        case 0:
+            let value = Int.random(in: 0...5, using: &rng)
+            return .rating([RatingFilter.exactly(value), .atLeast(value), .atMost(value)].randomElement(using: &rng)!)
+        case 1:
+            let guids = ["catA", "catB", "catC", "catA-child", "catB-child"]
+            let branches = (0..<Int.random(in: 0...2, using: &rng)).map { _ -> CategoryBranch in
+                let root = guids.randomElement(using: &rng)!
+                return CategoryBranch(rootGUID: root, propGUIDs: [root, root + "-child"].sorted())
+            }
+            let mode = [CategoryMatchMode.any, .all, .none].randomElement(using: &rng)!
+            return .category(CategoryFilter(branches: branches, mode: mode))
+        default:
+            return .group(randomGroup(depth: depth - 1, using: &rng))
+        }
+    }
+
+    private func randomGroup(depth: Int, using rng: inout SeededGenerator) -> RuleGroup {
+        let match = [GroupMatch.all, .any, .none].randomElement(using: &rng)!
+        let rules = (0..<Int.random(in: 0...3, using: &rng)).map { _ in randomRule(depth: depth, using: &rng) }
+        return RuleGroup(match: match, rules: rules)
+    }
+
+    /// The rules stated directly, in memory, with no SQL at all -- the
+    /// reference both SQL renderers are checked against. A rule that
+    /// can't be decided (a NULL rating) counts as not matching.
+    private func oracleMatches(_ rule: FilterRule, _ item: FixtureItem) -> Bool {
+        switch rule {
+        case .rating(let rating):
+            guard let value = item.rating else { return false }
+            switch rating {
+            case .exactly(let target): return value == target
+            case .atLeast(let target): return value >= target
+            case .atMost(let target): return value <= target
+            }
+        case .category(let category):
+            let tags = Set(item.propGUIDs)
+            let touches = { (branch: CategoryBranch) in !tags.isDisjoint(with: branch.propGUIDs) }
+            switch category.mode {
+            case .any: return category.branches.contains(where: touches)
+            case .all: return category.branches.allSatisfy(touches)
+            case .none: return !category.branches.contains(where: touches)
+            }
+        case .group(let group):
+            return oracleMatches(group, item)
+        }
+    }
+
+    private func oracleMatches(_ group: RuleGroup, _ item: FixtureItem) -> Bool {
+        switch group.match {
+        case .all: return group.rules.allSatisfy { oracleMatches($0, item) }
+        case .any: return group.rules.contains { oracleMatches($0, item) }
+        case .none: return !group.rules.contains { oracleMatches($0, item) }
+        }
+    }
+
+    func test_givenRandomRuleTrees_whenCountingWithEitherImplementation_thenBothMatchTheReferenceRules() async throws {
+        let items = [
+            FixtureItem(guid: "none-r0", rating: 0, propGUIDs: []),
+            FixtureItem(guid: "null-rating", rating: nil, propGUIDs: ["catA"]),
+            FixtureItem(guid: "null-rating-untagged", rating: nil, propGUIDs: []),
+            FixtureItem(guid: "a-r2", rating: 2, propGUIDs: ["catA"]),
+            FixtureItem(guid: "ab-r3", rating: 3, propGUIDs: ["catA", "catB"]),
+            FixtureItem(guid: "abc-r5", rating: 5, propGUIDs: ["catA", "catB", "catC"]),
+            FixtureItem(guid: "a1-b1-r4", rating: 4, propGUIDs: ["catA-child", "catB-child"]),
+            FixtureItem(guid: "c-r1", rating: 1, propGUIDs: ["catC"]),
+        ]
+        try makeFixture(items)
+        let catalog = try PhotoSupremeCatalog(path: fixturePath)
+        var rng = SeededGenerator(state: 20_260_923)
+
+        for trial in 0..<500 {
+            let filter = SampleFilter(root: randomGroup(depth: 3, using: &rng))
+            let viaGRDB = try await catalog.matchingItemCount(for: filter)
+            let viaRawText = try rawTextMatchingCount(filter)
+            let expected = items.filter { oracleMatches(filter.root, $0) }.count
+            XCTAssertEqual(viaGRDB, expected, "trial \(trial): PhotoSupremeCatalog is wrong for \(filter)")
+            XCTAssertEqual(viaRawText, expected, "trial \(trial): SQLPredicateText is wrong for \(filter)")
         }
     }
 }

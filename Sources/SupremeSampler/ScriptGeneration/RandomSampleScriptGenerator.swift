@@ -214,15 +214,32 @@ enum RandomSampleScriptGenerator {
 
     private static func filterSummaryLines(_ filter: SampleFilter) -> [String] {
         // Purely descriptive -- never parsed back out. The actual filter
-        // logic lives in the WHERE/AND clauses spliced in below.
-        var lines: [String] = []
-        if let rating = filter.rating {
-            lines.append("  Rating filter: \(describe(rating))")
+        // logic lives in the WHERE/AND clauses spliced in below. A
+        // top-level "all of" lists its rules directly (the flat case
+        // reads as it always has); any other group gets a "Match ... of:"
+        // line with its rules indented beneath it.
+        if filter.root.match == .all {
+            return filter.root.rules.flatMap { summaryLines($0, indent: "  ") }
         }
-        if let category = filter.category {
-            lines.append("  Category filter: \(describe(category))")
+        return groupSummaryLines(filter.root, indent: "  ")
+    }
+
+    private static func summaryLines(_ rule: FilterRule, indent: String) -> [String] {
+        switch rule {
+        case .rating(let rating): return [indent + "Rating filter: \(describe(rating))"]
+        case .category(let category): return [indent + "Category filter: \(describe(category))"]
+        case .group(let group): return groupSummaryLines(group, indent: indent)
         }
-        return lines
+    }
+
+    private static func groupSummaryLines(_ group: RuleGroup, indent: String) -> [String] {
+        let heading: String
+        switch group.match {
+        case .all: heading = "Match all of:"
+        case .any: heading = "Match any of:"
+        case .none: heading = "Match none of:"
+        }
+        return [indent + heading] + group.rules.flatMap { summaryLines($0, indent: indent + "  ") }
     }
 
     private static func describe(_ rating: RatingFilter) -> String {
