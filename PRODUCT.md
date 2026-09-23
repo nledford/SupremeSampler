@@ -96,6 +96,9 @@ locally; it is not published by IDimager.
 - File type: is any of / none of the file extensions in the catalog (text
   after the last dot, ignoring case), listed with counts — e.g. leave out
   its few thousand mkv videos.
+- Bookmark: is any of / none of the bookmark values in use, named the way the
+  earlier lusia tool uses them (none, curated, random uncurated, uncurated,
+  hidden).
 - Rules combine in groups — Match all / any / none of — and a group can
   contain nested groups, Lightroom Smart Collection style. A "none of"
   group excludes photos. The builder starts empty (whole catalog).

@@ -169,6 +169,15 @@ final class SQLPredicateTextTests: XCTestCase {
         XCTAssertEqual(SQLPredicateText.render(filter), "NOT (COALESCE(FileName, '') LIKE '%.mkv' ESCAPE '\\')")
     }
 
+    // MARK: - Bookmark
+
+    func test_givenBookmarks_whenRendering_thenNullCountsAsNoBookmark() {
+        let anyOf = SampleFilter(root: RuleGroup(match: .all, rules: [.bookmark(BookmarkFilter(values: [2, 3], mode: .any))]))
+        let noneOf = SampleFilter(root: RuleGroup(match: .all, rules: [.bookmark(BookmarkFilter(values: [5], mode: .none))]))
+        XCTAssertEqual(SQLPredicateText.render(anyOf), "CAST(COALESCE(idBookmark, 0) AS INTEGER) IN (2, 3)")
+        XCTAssertEqual(SQLPredicateText.render(noneOf), "CAST(COALESCE(idBookmark, 0) AS INTEGER) NOT IN (5)")
+    }
+
     // MARK: - Negations
 
     func test_givenRatingIsNot_whenRendering_thenItIsTheNullSafeInequality() {

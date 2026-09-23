@@ -69,6 +69,13 @@ struct PathRuleDraft: Equatable {
     var text: String = ""
 }
 
+/// A bookmark rule as the controls see it: a match mode and the values
+/// picked from the catalog's list (as the list's strings, "2").
+struct BookmarkRuleDraft: Equatable {
+    var mode: ValueMatchMode = .any
+    var selectedValues: Set<String> = []
+}
+
 /// A color-label rule as the controls see it: a match mode and the label
 /// values picked from the catalog's list (`""` is "No label").
 struct LabelRuleDraft: Equatable {
@@ -92,6 +99,7 @@ struct RuleDraft: Identifiable, Equatable {
         case path(PathRuleDraft)
         case label(LabelRuleDraft)
         case fileType(FileTypeRuleDraft)
+        case bookmark(BookmarkRuleDraft)
         case group(RuleGroupDraft)
     }
 
@@ -113,6 +121,7 @@ enum NewRuleKind {
     case path
     case label
     case fileType
+    case bookmark
     case group
 }
 
@@ -139,6 +148,7 @@ struct RuleGroupDraft: Identifiable, Equatable {
         case .path: rules.append(RuleDraft(.path(PathRuleDraft())))
         case .label: rules.append(RuleDraft(.label(LabelRuleDraft())))
         case .fileType: rules.append(RuleDraft(.fileType(FileTypeRuleDraft())))
+        case .bookmark: rules.append(RuleDraft(.bookmark(BookmarkRuleDraft())))
         case .group: rules.append(RuleDraft(.group(RuleGroupDraft())))
         }
     }
@@ -173,6 +183,9 @@ struct RuleGroupDraft: Identifiable, Equatable {
                     return .label(LabelFilter(labels: label.selectedLabels.sorted(), mode: label.mode))
                 case .fileType(let fileType):
                     return .fileType(FileTypeFilter(extensions: fileType.selectedTypes.sorted(), mode: fileType.mode))
+                case .bookmark(let bookmark):
+                    return .bookmark(
+                        BookmarkFilter(values: bookmark.selectedValues.compactMap(Int.init).sorted(), mode: bookmark.mode))
                 case .group(let group):
                     return .group(group.domainGroup(resolvingCategoriesIn: tree))
                 }

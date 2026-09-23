@@ -92,7 +92,7 @@ struct SampleBuilderView: View {
             Section("Rules") {
                 RuleGroupEditor(
                     group: $model.rules, propTree: model.propTree, depth: 0, onRemove: nil,
-                    labels: model.catalogLabels, fileTypes: model.catalogFileTypes)
+                    labels: model.catalogLabels, fileTypes: model.catalogFileTypes, bookmarks: model.catalogBookmarks)
             }
 
             Section("Preview") {

@@ -119,6 +119,23 @@ final class RuleGroupDraftTests: XCTestCase {
         XCTAssertEqual(filter(draft).root.rules, [.fileType(FileTypeFilter(extensions: ["gif", "mkv"], mode: .none))])
     }
 
+    func test_givenAnEmptyGroup_whenAddingABookmarkRule_thenItMatchesAnyOfNothingUntilBookmarksArePicked() {
+        var draft = RuleGroupDraft()
+
+        draft.add(.bookmark)
+
+        XCTAssertEqual(filter(draft).root.rules, [.bookmark(BookmarkFilter(values: [], mode: .any))])
+    }
+
+    func test_givenABookmarkRule_whenPickingBookmarks_thenTheFilterListsThemInOrder() {
+        var draft = RuleGroupDraft()
+        draft.add(.bookmark)
+
+        draft.rules[0].content = .bookmark(BookmarkRuleDraft(mode: .none, selectedValues: ["5", "2"]))
+
+        XCTAssertEqual(filter(draft).root.rules, [.bookmark(BookmarkFilter(values: [2, 5], mode: .none))])
+    }
+
     func test_givenARatingRule_whenChoosingIsNot_thenTheFilterNegatesTheValue() {
         var draft = RuleGroupDraft()
         draft.add(.rating)

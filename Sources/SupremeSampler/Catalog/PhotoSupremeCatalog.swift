@@ -243,6 +243,23 @@ struct PhotoSupremeCatalog: Sendable {
         }
     }
 
+    /// Every bookmark value in use with its photo count, in value order
+    /// (they're states, not a popularity list), NULL counted as 0. Uses
+    /// the `idBookmark` index.
+    func listBookmarks() async throws -> [ValueCount] {
+        try await dbPool.read { db in
+            try Row.fetchAll(
+                db,
+                sql: """
+                    SELECT CAST(COALESCE(idBookmark, 0) AS INTEGER) AS bookmark, COUNT(*) AS photos
+                    FROM idCatalogItem
+                    GROUP BY bookmark
+                    ORDER BY bookmark
+                    """
+            ).map { ValueCount(value: String($0["bookmark"] as Int), count: $0["photos"]) }
+        }
+    }
+
     /// Every distinct file type (see `FileTypeFilter`) with its photo
     /// count, most common first. `rtrim(name, <name with dots removed>)`
     /// strips everything after the last dot -- SQLite has no "last index
@@ -322,6 +339,7 @@ struct PhotoSupremeCatalog: Sendable {
         case .path(let path): return pathPredicate(path)
         case .label(let label): return labelPredicate(label)
         case .fileType(let fileType): return fileTypePredicate(fileType)
+        case .bookmark(let bookmark): return bookmarkPredicate(bookmark)
         case .group(let group): return groupPredicate(group)
         }
     }
@@ -342,6 +360,19 @@ struct PhotoSupremeCatalog: Sendable {
         case .all: return "(\(predicates.joined(separator: " AND ")))"
         case .any: return "(\(predicates.joined(separator: " OR ")))"
         case .none: return "NOT COALESCE((\(predicates.joined(separator: " OR "))), 0)"
+        }
+    }
+
+    /// `CAST(COALESCE(idBookmark, 0) AS INTEGER)`: the column is REAL
+    /// (2.0) and may be NULL, which counts as 0, "none" -- so "none of
+    /// Hidden" keeps photos with no bookmark at all.
+    private static func bookmarkPredicate(_ bookmark: BookmarkFilter) -> SQL {
+        guard !bookmark.values.isEmpty else {
+            return bookmark.mode == .any ? "0 = 1" : "1 = 1"
+        }
+        switch bookmark.mode {
+        case .any: return "CAST(COALESCE(idBookmark, 0) AS INTEGER) IN \(bookmark.values)"
+        case .none: return "CAST(COALESCE(idBookmark, 0) AS INTEGER) NOT IN \(bookmark.values)"
         }
     }
 

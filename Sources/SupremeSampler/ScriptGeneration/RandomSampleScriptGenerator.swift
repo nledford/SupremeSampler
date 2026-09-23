@@ -237,6 +237,10 @@ enum RandomSampleScriptGenerator {
             let mode = fileType.mode == .any ? "any of" : "none of"
             let types = fileType.extensions.map { $0.isEmpty ? "(no extension)" : commentSafe($0) }
             return [indent + "File type filter: \(mode) " + (types.isEmpty ? "(none picked)" : types.joined(separator: ", "))]
+        case .bookmark(let bookmark):
+            let mode = bookmark.mode == .any ? "any of" : "none of"
+            let names = bookmark.values.map(BookmarkFilter.displayName(for:))
+            return [indent + "Bookmark filter: \(mode) " + (names.isEmpty ? "(none picked)" : names.joined(separator: ", "))]
         case .group(let group): return groupSummaryLines(group, indent: indent)
         }
     }

@@ -36,7 +36,8 @@ final class SampleBuilderModelTests: XCTestCase {
                         GUID TEXT PRIMARY KEY,
                         Rating INTEGER NOT NULL DEFAULT 0,
                         idLabel TEXT,
-                        FileName TEXT
+                        FileName TEXT,
+                        idBookmark REAL
                     )
                     """)
             try db.execute(
@@ -64,8 +65,10 @@ final class SampleBuilderModelTests: XCTestCase {
                     """)
             for i in 1...rowCount {
                 try db.execute(
-                    sql: "INSERT INTO idCatalogItem (GUID, Rating, idLabel, FileName) VALUES (?, ?, ?, ?)",
-                    arguments: ["item-\(i)", 0, i == 1 ? "Select" : "", i == 1 ? "clip.mkv" : "photo-\(i).jpg"]
+                    sql: "INSERT INTO idCatalogItem (GUID, Rating, idLabel, FileName, idBookmark) VALUES (?, ?, ?, ?, ?)",
+                    arguments: [
+                        "item-\(i)", 0, i == 1 ? "Select" : "", i == 1 ? "clip.mkv" : "photo-\(i).jpg", i == 1 ? 5.0 : 0.0,
+                    ]
                 )
             }
             // A single top-level category with no children -- enough
@@ -466,6 +469,16 @@ final class SampleBuilderModelTests: XCTestCase {
 
         XCTAssertEqual(
             model.catalogFileTypes, .loaded([ValueCount(value: "jpg", count: 2), ValueCount(value: "mkv", count: 1)]))
+    }
+
+    func test_givenACatalogOpens_whenItFinishes_thenItsBookmarksAreListedWithCounts() async throws {
+        let model = SampleBuilderModel.forTesting()
+
+        model.openCatalog(at: try makeFixturePath(rowCount: 3))
+        await model.waitForPendingCatalogOpenForTesting()
+
+        XCTAssertEqual(
+            model.catalogBookmarks, .loaded([ValueCount(value: "0", count: 2), ValueCount(value: "5", count: 1)]))
     }
 
     func test_givenNoCatalogOpen_whenAskingForLabels_thenTheyAreStillLoading() {

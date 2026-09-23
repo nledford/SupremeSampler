@@ -175,6 +175,7 @@ final class ViewRenderingTests: XCTestCase {
             .path(PathRuleDraft()),
             .label(LabelRuleDraft()),
             .fileType(FileTypeRuleDraft()),
+            .bookmark(BookmarkRuleDraft()),
             .group(RuleGroupDraft(match: .none, rules: [RuleDraft(.rating(RatingRuleDraft()))])),
         ] {
             _ = RuleRow(rule: .constant(RuleDraft(content)), propTree: nestedTree, depth: 1, onRemove: {}).body
@@ -209,6 +210,13 @@ final class ViewRenderingTests: XCTestCase {
         let loaded = CatalogValues.loaded([ValueCount(value: "jpg", count: 9), ValueCount(value: "", count: 1)])
         for values in [CatalogValues.loading, loaded, .failed("timeout")] {
             _ = FileTypeRuleRow(rule: .constant(FileTypeRuleDraft()), fileTypes: values, onRemove: {}).body
+        }
+    }
+
+    func test_givenABookmarkRule_whenBuildingItsRow_thenEachLoadStateRenders() {
+        let loaded = CatalogValues.loaded([ValueCount(value: "0", count: 9), ValueCount(value: "5", count: 1)])
+        for values in [CatalogValues.loading, loaded, .failed("x")] {
+            _ = BookmarkRuleRow(rule: .constant(BookmarkRuleDraft()), bookmarks: values, onRemove: {}).body
         }
     }
 

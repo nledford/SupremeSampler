@@ -212,17 +212,21 @@ for instance, so it isn't offered.
   jpg". Listing needs a full scan (~4s), so the model loads it in the
   background after the catalog opens (`loadFileTypes`, cancel-and-
   replace on catalog switch).
+- **Bookmark** (`BookmarkFilter`): Photo Supreme gives `idBookmark`
+  values no names; the meanings are lusia's (it sets them) — 0 none,
+  2 curated, 3 random uncurated, 4 uncurated, 5 hidden
+  (`BookmarkFilter.lusiaNames`, from lusia's `src/domain/mod.rs`). The
+  column is REAL and nullable, so it's compared as
+  `CAST(COALESCE(idBookmark, 0) AS INTEGER)`; NULL is "none".
 - **Negations**: `RatingFilter.isNot` renders `Rating IS NOT n`,
   SQLite's NULL-safe inequality, so an unknown rating counts as "not n"
   — consistent with "none of" groups. `PathFilter.negated` renders
-  `NOT EXISTS`. The label, file type and category rules already
-  have "none of". The UI offers each as one flat operator
+  `NOT EXISTS`. The label, file type, category and bookmark rules
+  already have "none of". The UI offers each as one flat operator
   choice (`RatingComparisonKind.isNot`, `PathOperator`).
-- **Known but not yet offered:** `idBookmark` has meaning lusia
-  assigned — 0 none, 2 curated, 3 random uncurated, 4 uncurated,
-  5 hidden (`src/domain/mod.rs` there) — and `Rating < 0` is lusia's
-  "pending deletion" (21 photos at -1), which the 0-5 rating stepper
-  can't express.
+- **Known but not yet offered:** `Rating < 0` is lusia's "pending
+  deletion" (21 photos at -1 on 2026-09-23), which the 0-5 rating
+  stepper can't express.
 
 ## Switching catalogs (File > Open Catalog…)
 

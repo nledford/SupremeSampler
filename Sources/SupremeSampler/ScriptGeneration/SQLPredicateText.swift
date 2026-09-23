@@ -48,6 +48,7 @@ enum SQLPredicateText {
         case .path(let path): return pathClause(path)
         case .label(let label): return labelClause(label)
         case .fileType(let fileType): return fileTypeClause(fileType)
+        case .bookmark(let bookmark): return bookmarkClause(bookmark)
         case .group(let group): return groupClause(group, isRoot: false)
         }
     }
@@ -99,6 +100,15 @@ enum SQLPredicateText {
         }
         let list = label.labels.map(SQLStringLiteral.render).joined(separator: ", ")
         return "COALESCE(idLabel, '') " + (label.mode == .any ? "IN" : "NOT IN") + " (" + list + ")"
+    }
+
+    /// Same shape as `PhotoSupremeCatalog.bookmarkPredicate`.
+    private static func bookmarkClause(_ bookmark: BookmarkFilter) -> String {
+        guard !bookmark.values.isEmpty else {
+            return bookmark.mode == .any ? "0 = 1" : "1 = 1"
+        }
+        let list = bookmark.values.map(String.init).joined(separator: ", ")
+        return "CAST(COALESCE(idBookmark, 0) AS INTEGER) " + (bookmark.mode == .any ? "IN" : "NOT IN") + " (" + list + ")"
     }
 
     /// Same shape as `PhotoSupremeCatalog.pathPredicate`.

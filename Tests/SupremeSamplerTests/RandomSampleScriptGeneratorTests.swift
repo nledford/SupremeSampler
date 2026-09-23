@@ -268,6 +268,12 @@ final class RandomSampleScriptGeneratorTests: XCTestCase {
         XCTAssertTrue(script.contains("Path filter: does not end with \".png\""))
     }
 
+    func test_givenABookmarkRule_whenGenerating_thenTheHeaderNamesTheBookmarks() {
+        let script = header(for: [.bookmark(BookmarkFilter(values: [2, 5], mode: .none))])
+
+        XCTAssertTrue(script.contains("Bookmark filter: none of Curated, Hidden"))
+    }
+
     // MARK: - Header
 
     func test_givenFilter_whenGenerating_thenHeaderSummarizesIt() {

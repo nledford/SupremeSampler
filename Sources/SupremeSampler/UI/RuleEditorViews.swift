@@ -32,6 +32,7 @@ struct RuleGroupEditor: View {
     /// The catalog's color labels and file types, for those rules' pickers.
     var labels: CatalogValues = .loading
     var fileTypes: CatalogValues = .loading
+    var bookmarks: CatalogValues = .loading
 
     var body: some View {
         // Kept short and on one line: the sidebar is narrow, and a row
@@ -56,6 +57,7 @@ struct RuleGroupEditor: View {
                 Button("File path rule") { group.add(.path) }
                 Button("Color label rule") { group.add(.label) }
                 Button("File type rule") { group.add(.fileType) }
+                Button("Bookmark rule") { group.add(.bookmark) }
                 Divider()
                 Button("Nested group") { group.add(.group) }
             } label: {
@@ -91,7 +93,8 @@ struct RuleGroupEditor: View {
                 depth: depth + 1,
                 onRemove: { group.removeRule(id: rule.id) },
                 labels: labels,
-                fileTypes: fileTypes
+                fileTypes: fileTypes,
+                bookmarks: bookmarks
             )
         }
     }
@@ -129,6 +132,7 @@ struct RuleRow: View {
     let onRemove: () -> Void
     var labels: CatalogValues = .loading
     var fileTypes: CatalogValues = .loading
+    var bookmarks: CatalogValues = .loading
 
     var body: some View {
         // `switch` over an enum with payloads, like Rust's `match`; each
@@ -198,6 +202,19 @@ struct RuleRow: View {
                 onRemove: onRemove
             )
             .padding(.leading, CGFloat(depth) * indentPerLevel)
+        case .bookmark(let bookmark):
+            BookmarkRuleRow(
+                rule: Binding(
+                    get: {
+                        if case .bookmark(let current) = rule.content { return current }
+                        return bookmark
+                    },
+                    set: { rule.content = .bookmark($0) }
+                ),
+                bookmarks: bookmarks,
+                onRemove: onRemove
+            )
+            .padding(.leading, CGFloat(depth) * indentPerLevel)
         case .group(let group):
             RuleGroupEditor(
                 group: Binding(
@@ -211,7 +228,8 @@ struct RuleRow: View {
                 depth: depth,
                 onRemove: onRemove,
                 labels: labels,
-                fileTypes: fileTypes
+                fileTypes: fileTypes,
+                bookmarks: bookmarks
             )
         }
     }
@@ -382,6 +400,36 @@ struct FileTypeRuleRow: View {
     }
 }
 
+/// "Bookmark [is any of / is none of]" plus the bookmark values in use,
+/// named the way the earlier lusia tool uses them ("2 · Curated").
+struct BookmarkRuleRow: View {
+    @Binding var rule: BookmarkRuleDraft
+    let bookmarks: CatalogValues
+    let onRemove: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("Bookmark")
+                Picker("Match", selection: $rule.mode) {
+                    Text("is any of").tag(ValueMatchMode.any)
+                    Text("is none of").tag(ValueMatchMode.none)
+                }
+                .labelsHidden()
+                .fixedSize()
+                Spacer()
+                RemoveRuleButton(accessibilityLabel: "Remove bookmark rule", action: onRemove)
+            }
+            CatalogValuePicker(
+                values: bookmarks, selection: $rule.selectedValues, noun: "bookmarks",
+                displayName: { value in
+                    guard let number = Int(value) else { return value }
+                    return "\(number) · \(BookmarkFilter.displayName(for: number))"
+                })
+        }
+    }
+}
+
 /// A multi-select list of values read from the catalog, each with its
 /// photo count, or the state of loading them.
 struct CatalogValuePicker: View {
@@ -391,6 +439,9 @@ struct CatalogValuePicker: View {
     let noun: String
     /// How to show the empty-string value, if it's meaningful.
     var emptyValueName: String = "(none)"
+    /// How to show a value, when the stored form isn't readable on its
+    /// own (a bookmark's number).
+    var displayName: ((String) -> String)? = nil
 
     var body: some View {
         switch values {
@@ -408,7 +459,7 @@ struct CatalogValuePicker: View {
                     if item.value.isEmpty {
                         Text(emptyValueName).italic()
                     } else {
-                        Text(item.value)
+                        Text(displayName?(item.value) ?? item.value)
                     }
                     Spacer()
                     Text(item.count, format: .number).foregroundStyle(.secondary).monospacedDigit()

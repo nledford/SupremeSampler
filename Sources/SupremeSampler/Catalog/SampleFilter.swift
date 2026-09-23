@@ -24,6 +24,7 @@ enum FilterRule: Equatable {
     case path(PathFilter)
     case label(LabelFilter)
     case fileType(FileTypeFilter)
+    case bookmark(BookmarkFilter)
     case group(RuleGroup)
 }
 

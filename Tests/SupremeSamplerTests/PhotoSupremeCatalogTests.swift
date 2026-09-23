@@ -44,16 +44,20 @@ final class PhotoSupremeCatalogTests: XCTestCase {
         /// Color label text as stored; `""` is "no label", `nil` writes
         /// SQL NULL (which also means no label).
         let label: String?
+        /// Stored as REAL, like the real schema (`idBookmark float(22)`);
+        /// `nil` writes NULL.
+        let bookmark: Double?
 
         init(
             guid: String = UUID().uuidString, rating: Int? = 0, propGUIDs: [String] = [], path: String? = nil,
-            label: String? = ""
+            label: String? = "", bookmark: Double? = 0
         ) {
             self.guid = guid
             self.rating = rating
             self.propGUIDs = propGUIDs
             self.path = path ?? "/Volumes/Test/photos/\(guid).jpg"
             self.label = label
+            self.bookmark = bookmark
         }
     }
 
@@ -74,7 +78,8 @@ final class PhotoSupremeCatalogTests: XCTestCase {
                         Rating INTEGER,
                         PathGUID TEXT,
                         FileName TEXT,
-                        idLabel TEXT
+                        idLabel TEXT,
+                        idBookmark REAL
                     )
                     """)
             // The real catalog's absolute folder paths (trailing slash,
@@ -114,8 +119,11 @@ final class PhotoSupremeCatalogTests: XCTestCase {
                         arguments: [folder, folder])
                 }
                 try db.execute(
-                    sql: "INSERT INTO idCatalogItem (GUID, Rating, PathGUID, FileName, idLabel) VALUES (?, ?, ?, ?, ?)",
-                    arguments: [item.guid, item.rating, folder, fileName, item.label]
+                    sql: """
+                        INSERT INTO idCatalogItem (GUID, Rating, PathGUID, FileName, idLabel, idBookmark)
+                        VALUES (?, ?, ?, ?, ?, ?)
+                        """,
+                    arguments: [item.guid, item.rating, folder, fileName, item.label, item.bookmark]
                 )
                 for propGUID in item.propGUIDs {
                     try db.execute(
@@ -688,6 +696,58 @@ final class PhotoSupremeCatalogTests: XCTestCase {
         let matches = try await fileTypeCount(.any, [""])
 
         XCTAssertEqual(matches, 1)
+    }
+
+    // MARK: - Bookmarks (the meanings the earlier lusia tool assigned)
+
+    private func makeBookmarkFixture() throws {
+        try makeFixture([
+            FixtureItem(guid: "none", bookmark: 0),
+            FixtureItem(guid: "null", bookmark: nil),
+            FixtureItem(guid: "curated", bookmark: 2),
+            FixtureItem(guid: "random", bookmark: 3),
+            FixtureItem(guid: "uncurated-1", bookmark: 4),
+            FixtureItem(guid: "uncurated-2", bookmark: 4),
+            FixtureItem(guid: "hidden", bookmark: 5),
+        ])
+    }
+
+    private func bookmarkCount(_ mode: ValueMatchMode, _ values: [Int]) async throws -> Int {
+        try await PhotoSupremeCatalog(path: fixturePath).matchingItemCount(
+            for: SampleFilter(root: RuleGroup(match: .all, rules: [.bookmark(BookmarkFilter(values: values, mode: mode))])))
+    }
+
+    func test_givenACatalog_whenListingBookmarks_thenEachValueComesWithItsCountInValueOrder() async throws {
+        try makeBookmarkFixture()
+
+        let bookmarks = try await PhotoSupremeCatalog(path: fixturePath).listBookmarks()
+
+        XCTAssertEqual(
+            bookmarks,
+            [
+                ValueCount(value: "0", count: 2),
+                ValueCount(value: "2", count: 1),
+                ValueCount(value: "3", count: 1),
+                ValueCount(value: "4", count: 2),
+                ValueCount(value: "5", count: 1),
+            ],
+            "stored as REAL (2.0) but listed as whole numbers; NULL counts as 0")
+    }
+
+    func test_givenAnyOfBookmarks_whenCountingMatches_thenPhotosWithEitherBookmarkMatch() async throws {
+        try makeBookmarkFixture()
+
+        let matches = try await bookmarkCount(.any, [3, 4])
+
+        XCTAssertEqual(matches, 3)
+    }
+
+    func test_givenNoneOfHidden_whenCountingMatches_thenPhotosWithNoBookmarkAreKept() async throws {
+        try makeBookmarkFixture()
+
+        let matches = try await bookmarkCount(.none, [5])
+
+        XCTAssertEqual(matches, 6, "including the NULL-bookmark photo")
     }
 
     // MARK: - Negated comparisons

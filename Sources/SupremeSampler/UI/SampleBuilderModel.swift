@@ -35,6 +35,8 @@ final class SampleBuilderModel {
     private(set) var propTree: [CatalogPropNode] = []
     /// The open catalog's color labels, for the label rule's picker.
     private(set) var catalogLabels: CatalogValues = .loading
+    /// The open catalog's bookmark values, for the bookmark rule's picker.
+    private(set) var catalogBookmarks: CatalogValues = .loading
     /// The open catalog's file types, for the file-type rule's picker.
     /// Loaded in the background after opening (see `loadFileTypes`).
     private(set) var catalogFileTypes: CatalogValues = .loading
@@ -190,6 +192,12 @@ final class SampleBuilderModel {
                     catalogLabels = .loaded(try await opened.listLabels())
                 } catch {
                     catalogLabels = .failed(error.localizedDescription)
+                }
+                catalogBookmarks = .loading
+                do {
+                    catalogBookmarks = .loaded(try await opened.listBookmarks())
+                } catch {
+                    catalogBookmarks = .failed(error.localizedDescription)
                 }
                 catalog = opened
                 catalogPath = path
