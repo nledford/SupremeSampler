@@ -42,6 +42,21 @@ together in `ContentView`. Copy-to-clipboard is the deliberate v1 save
 action — paste into Script Studio to review and test before anything
 is written to disk; there's no "save to file" yet.
 
+**The rule builder edits a draft, not the domain filter.**
+`RuleGroupDraft` (`UI/RuleGroupDraft.swift`) is what the controls bind
+to — a picker kind plus a stepper value per rating rule, the tree's raw
+selection per category rule, and a stable `UUID` per rule for SwiftUI
+row identity. `SampleBuilderModel.rules` holds one; `currentFilter`
+converts it to the domain `SampleFilter` (resolving category branches)
+on every read. Add/remove/change are methods on the draft, unit-tested
+without views (`RuleGroupDraftTests`). `RuleEditorViews.swift` renders
+it recursively as flattened `Form` rows, indented per nesting level;
+rows get id-looked-up bindings rather than `ForEach($array)` index
+bindings, which can crash when a row is removed. Keep header rows short:
+the sidebar is narrow, and an over-wide row squeezed its text into a
+tall sliver and shoved the whole form off-screen (seen in the running
+app, 2026-09-23).
+
 **The last successfully-opened catalog path is remembered** via
 `RecentCatalogStore` (another narrow protocol port, `UserDefaults`-backed
 in production) and reopened automatically on launch

@@ -133,52 +133,62 @@ final class ViewRenderingTests: XCTestCase {
         _ = view.body
     }
 
-    func test_givenRatingEnabled_whenBuildingSampleBuilderView_thenBodyDoesNotCrash() {
+    func test_givenRules_whenBuildingSampleBuilderView_thenBodyDoesNotCrash() {
         let model = SampleBuilderModel()
-        model.ratingEnabled = true
+        model.rules.add(.rating)
+        model.rules.add(.category)
+        model.rules.add(.group)
         let view = SampleBuilderView(model: model)
         _ = view.body
     }
 
-    func test_givenCategoryEnabledWithNoProps_whenBuildingSampleBuilderView_thenBodyDoesNotCrash() {
-        let model = SampleBuilderModel()
-        model.categoryEnabled = true
-        let view = SampleBuilderView(model: model)
-        _ = view.body
-    }
+    // The rule editor's rows are their own view structs; SwiftUI only
+    // evaluates a child's `body` while really rendering, so each one is
+    // built directly here, once per meaningful state.
 
-    func test_givenCategoryEnabledWithPropsSelected_whenBuildingSampleBuilderView_thenBodyDoesNotCrash() {
-        let model = SampleBuilderModel()
-        model.injectCatalogForTesting(
-            FakeCatalogForViewTests(),
-            propTree: [CatalogPropNode(guid: "g1", name: "Vacation", children: [])]
+    private let nestedTree = [
+        CatalogPropNode(
+            guid: "cat-nature",
+            name: "Nature",
+            children: [CatalogPropNode(guid: "prop-pines", name: "Pines", children: [])]
         )
-        model.categoryEnabled = true
-        model.selectedCategoryGUIDs = ["g1"]
+    ]
 
-        let view = SampleBuilderView(model: model)
-        _ = view.body
+    func test_givenEachGroupMatchAndDepth_whenBuildingRuleGroupEditor_thenBodyDoesNotCrash() {
+        var group = RuleGroupDraft()
+        group.add(.rating)
+        group.add(.category)
+        group.add(.group)
+        for match in [GroupMatch.all, .any, .none] {
+            group.match = match
+            _ = RuleGroupEditor(group: .constant(group), propTree: nestedTree, depth: 0, onRemove: nil).body
+            _ = RuleGroupEditor(group: .constant(group), propTree: nestedTree, depth: 2, onRemove: {}).body
+        }
+        _ = RuleGroupEditor(group: .constant(RuleGroupDraft()), propTree: [], depth: 0, onRemove: nil).body
     }
 
-    func test_givenNestedCategoryTree_whenBuildingSampleBuilderView_thenBodyDoesNotCrash() {
-        // A non-trivial tree (a category with children) so the outline
-        // view's disclosure-triangle/children rendering path gets
-        // exercised too, not just the flat-leaf case above.
-        let model = SampleBuilderModel()
-        model.injectCatalogForTesting(
-            FakeCatalogForViewTests(),
-            propTree: [
-                CatalogPropNode(
-                    guid: "cat-nature",
-                    name: "Nature",
-                    children: [CatalogPropNode(guid: "prop-pines", name: "Pines", children: [])]
-                )
-            ]
-        )
-        model.categoryEnabled = true
+    func test_givenEachRuleKind_whenBuildingRuleRow_thenBodyDoesNotCrash() {
+        for content: RuleDraft.Content in [
+            .rating(RatingRuleDraft()),
+            .category(CategoryRuleDraft()),
+            .category(CategoryRuleDraft(mode: .all, selectedGUIDs: ["prop-pines"])),
+            .group(RuleGroupDraft(match: .none, rules: [RuleDraft(.rating(RatingRuleDraft()))])),
+        ] {
+            _ = RuleRow(rule: .constant(RuleDraft(content)), propTree: nestedTree, depth: 1, onRemove: {}).body
+        }
+    }
 
-        let view = SampleBuilderView(model: model)
-        _ = view.body
+    func test_givenACategoryRule_whenBuildingItsRow_thenBothEmptyAndNonEmptyTreesRender() {
+        _ = CategoryRuleRow(rule: .constant(CategoryRuleDraft()), propTree: [], onRemove: {}).body
+        _ = CategoryRuleRow(
+            rule: .constant(CategoryRuleDraft(mode: .none, selectedGUIDs: ["cat-nature"])),
+            propTree: nestedTree,
+            onRemove: {}
+        ).body
+    }
+
+    func test_givenARatingRule_whenBuildingItsRow_thenBodyDoesNotCrash() {
+        _ = RatingRuleRow(rule: .constant(RatingRuleDraft(comparison: .atMost, value: 0)), onRemove: {}).body
     }
 
     func test_givenCountingMatches_whenBuildingSampleBuilderView_thenBodyDoesNotCrash() {

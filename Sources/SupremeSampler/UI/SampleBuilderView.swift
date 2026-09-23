@@ -1,8 +1,8 @@
 import SwiftUI
 
-/// The left-hand rule builder: sample size, a rating rule, a category
-/// rule, and the live pre-flight match count -- the Lightroom Smart
-/// Collection-style interface this app was built around.
+/// The left-hand rule builder: sample size, the (possibly nested) rules
+/// -- see `RuleGroupEditor` -- and the live pre-flight match count, the
+/// Lightroom Smart Collection-style interface this app was built around.
 struct SampleBuilderView: View {
     // `@Bindable` is what lets `$model.sampleSize` etc. work below: it
     // derives a two-way `Binding` for each stored property of an
@@ -89,55 +89,8 @@ struct SampleBuilderView: View {
                 }
             }
 
-            Section("Rating") {
-                Toggle("Filter by rating", isOn: $model.ratingEnabled)
-                if model.ratingEnabled {
-                    Picker("Rating", selection: $model.ratingComparison) {
-                        ForEach(RatingComparisonKind.allCases) { kind in
-                            Text(kind.rawValue).tag(kind)
-                        }
-                    }
-                    Stepper("Value: \(model.ratingValue)", value: $model.ratingValue, in: 0...5)
-                }
-            }
-
-            Section("Category") {
-                Toggle("Filter by category", isOn: $model.categoryEnabled)
-                if model.categoryEnabled {
-                    Picker("Match", selection: $model.categoryMode) {
-                        Text("Any of").tag(CategoryMatchMode.any)
-                        Text("All of").tag(CategoryMatchMode.all)
-                        Text("None of").tag(CategoryMatchMode.none)
-                    }
-                    .pickerStyle(.segmented)
-
-                    if model.propTree.isEmpty {
-                        Text("No categories in this catalog.")
-                            .foregroundStyle(.secondary)
-                    } else {
-                        // `children: \.childrenOrNil` is what makes this
-                        // a genuine outline/tree view (disclosure
-                        // triangles, expand/collapse) instead of a flat
-                        // list -- native SwiftUI, no third-party tree-
-                        // view component needed. Combined with
-                        // `selection:`, macOS Lists support multi-select
-                        // natively via cmd/shift-click, no explicit edit
-                        // mode needed (unlike iOS) -- selecting a parent
-                        // node doesn't implicitly select its children;
-                        // each node (leaf or not) is its own independent
-                        // choice, matching how a photo can be tagged
-                        // with any prop in the tree directly, not just
-                        // leaves.
-                        List(model.propTree, children: \.childrenOrNil, selection: $model.selectedCategoryGUIDs) {
-                            node in
-                            Text(node.name)
-                        }
-                        .frame(minHeight: 200)
-                        Text("\(model.selectedCategoryGUIDs.count) selected")
-                            .foregroundStyle(.secondary)
-                            .font(.caption)
-                    }
-                }
+            Section("Rules") {
+                RuleGroupEditor(group: $model.rules, propTree: model.propTree, depth: 0, onRemove: nil)
             }
 
             Section("Preview") {

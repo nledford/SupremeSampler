@@ -115,38 +115,17 @@ final class SampleBuilderModel {
         }
     }
 
-    var ratingEnabled = false
-    var ratingComparison: RatingComparisonKind = .atLeast
-    var ratingValue: Int = 3
+    /// Everything in the rule builder: the root "Match all/any/none of"
+    /// group and its (possibly nested) rules. Starts empty, which
+    /// matches the whole catalog.
+    var rules = RuleGroupDraft()
 
-    var categoryEnabled = false
-    var categoryMode: CategoryMatchMode = .any
-    var selectedCategoryGUIDs: Set<String> = []
-
-    /// Derives the domain filter from the current toggles/values --
-    /// pure, no catalog access, trivially testable without a real file.
+    /// Derives the domain filter from the rules being edited -- pure, no
+    /// catalog access, trivially testable without a real file. Category
+    /// selections are expanded to whole branches against `propTree`
+    /// (see `CategoryBranch`).
     var currentFilter: SampleFilter {
-        SampleFilter(
-            rating: ratingEnabled ? ratingFilter : nil,
-            category: categoryEnabled ? categoryFilter : nil
-        )
-    }
-
-    private var ratingFilter: RatingFilter {
-        switch ratingComparison {
-        case .exactly: return .exactly(ratingValue)
-        case .atLeast: return .atLeast(ratingValue)
-        case .atMost: return .atMost(ratingValue)
-        }
-    }
-
-    /// Selecting a node in the tree selects its whole branch (the node
-    /// plus every subcategory beneath it) -- see `CategoryBranch`.
-    private var categoryFilter: CategoryFilter {
-        CategoryFilter(
-            branches: CategoryBranch.resolve(selectedGUIDs: selectedCategoryGUIDs, in: propTree),
-            mode: categoryMode
-        )
+        SampleFilter(root: rules.domainGroup(resolvingCategoriesIn: propTree))
     }
 
     /// The generated `.psc` source for the current filter/size -- pure,

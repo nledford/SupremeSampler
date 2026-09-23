@@ -87,6 +87,9 @@ locally; it is not published by IDimager.
   hierarchical multi-select tree (cmd/shift-click, native macOS `List`).
   Selecting a category or keyword includes all of its subcategories.
 - Sample size: 1…1,000,000, step 100, default 10,000.
+- Rules combine in groups — Match all / any / none of — and a group can
+  contain nested groups, Lightroom Smart Collection style. A "none of"
+  group excludes photos. The builder starts empty (whole catalog).
 
 **Hard constraints**
 
@@ -119,9 +122,6 @@ locally; it is not published by IDimager.
 - Saving the generated script to disk, replacing clipboard-only as the save
   action.
 - More filter dimensions beyond rating and category.
-- A rule-builder UI for nested groups and including/excluding photos. The
-  filter model and both SQL renderers already support it (all/any/none-of
-  groups, nested); the UI still builds a single flat "all of" group.
 
 **Platform vocabulary gap:** this is a native macOS app, but the Impeccable
 product schema only recognizes `web`, `ios`, `android`, and `adaptive`. The
