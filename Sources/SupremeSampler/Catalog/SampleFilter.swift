@@ -25,6 +25,10 @@ enum FilterRule: Equatable {
     case label(LabelFilter)
     case fileType(FileTypeFilter)
     case bookmark(BookmarkFilter)
+    /// `true`: only photos pending deletion; `false`: only photos that
+    /// aren't. Pending deletion is `Rating < 0`, the earlier lusia tool's
+    /// convention (it marks a photo by setting `Rating = -1`).
+    case pendingDeletion(Bool)
     case group(RuleGroup)
 }
 

@@ -136,6 +136,16 @@ final class RuleGroupDraftTests: XCTestCase {
         XCTAssertEqual(filter(draft).root.rules, [.bookmark(BookmarkFilter(values: [2, 5], mode: .none))])
     }
 
+    func test_givenAnEmptyGroup_whenAddingAPendingDeletionRule_thenItDefaultsToExcludingPendingPhotos() {
+        // The likely use in a sampling tool: keep photos already marked
+        // for deletion out of the sample.
+        var draft = RuleGroupDraft()
+
+        draft.add(.pendingDeletion)
+
+        XCTAssertEqual(filter(draft).root.rules, [.pendingDeletion(false)])
+    }
+
     func test_givenARatingRule_whenChoosingIsNot_thenTheFilterNegatesTheValue() {
         var draft = RuleGroupDraft()
         draft.add(.rating)

@@ -274,6 +274,11 @@ final class RandomSampleScriptGeneratorTests: XCTestCase {
         XCTAssertTrue(script.contains("Bookmark filter: none of Curated, Hidden"))
     }
 
+    func test_givenAPendingDeletionRule_whenGenerating_thenTheHeaderSaysWhetherTheyAreExcluded() {
+        XCTAssertTrue(header(for: [.pendingDeletion(false)]).contains("Pending deletion: excluded"))
+        XCTAssertTrue(header(for: [.pendingDeletion(true)]).contains("Pending deletion: only"))
+    }
+
     // MARK: - Header
 
     func test_givenFilter_whenGenerating_thenHeaderSummarizesIt() {

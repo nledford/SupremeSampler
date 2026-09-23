@@ -340,6 +340,8 @@ struct PhotoSupremeCatalog: Sendable {
         case .label(let label): return labelPredicate(label)
         case .fileType(let fileType): return fileTypePredicate(fileType)
         case .bookmark(let bookmark): return bookmarkPredicate(bookmark)
+        // COALESCE: an unknown rating isn't pending deletion.
+        case .pendingDeletion(let isPending): return isPending ? "COALESCE(Rating, 0) < 0" : "COALESCE(Rating, 0) >= 0"
         case .group(let group): return groupPredicate(group)
         }
     }

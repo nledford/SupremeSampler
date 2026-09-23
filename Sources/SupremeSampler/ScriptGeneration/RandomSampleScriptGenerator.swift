@@ -241,6 +241,8 @@ enum RandomSampleScriptGenerator {
             let mode = bookmark.mode == .any ? "any of" : "none of"
             let names = bookmark.values.map(BookmarkFilter.displayName(for:))
             return [indent + "Bookmark filter: \(mode) " + (names.isEmpty ? "(none picked)" : names.joined(separator: ", "))]
+        case .pendingDeletion(let isPending):
+            return [indent + "Pending deletion: " + (isPending ? "only" : "excluded")]
         case .group(let group): return groupSummaryLines(group, indent: indent)
         }
     }

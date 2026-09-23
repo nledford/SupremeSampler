@@ -49,6 +49,7 @@ enum SQLPredicateText {
         case .label(let label): return labelClause(label)
         case .fileType(let fileType): return fileTypeClause(fileType)
         case .bookmark(let bookmark): return bookmarkClause(bookmark)
+        case .pendingDeletion(let isPending): return isPending ? "COALESCE(Rating, 0) < 0" : "COALESCE(Rating, 0) >= 0"
         case .group(let group): return groupClause(group, isRoot: false)
         }
     }

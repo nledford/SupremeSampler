@@ -58,6 +58,7 @@ struct RuleGroupEditor: View {
                 Button("Color label rule") { group.add(.label) }
                 Button("File type rule") { group.add(.fileType) }
                 Button("Bookmark rule") { group.add(.bookmark) }
+                Button("Pending deletion rule") { group.add(.pendingDeletion) }
                 Divider()
                 Button("Nested group") { group.add(.group) }
             } label: {
@@ -212,6 +213,18 @@ struct RuleRow: View {
                     set: { rule.content = .bookmark($0) }
                 ),
                 bookmarks: bookmarks,
+                onRemove: onRemove
+            )
+            .padding(.leading, CGFloat(depth) * indentPerLevel)
+        case .pendingDeletion(let deletion):
+            PendingDeletionRuleRow(
+                rule: Binding(
+                    get: {
+                        if case .pendingDeletion(let current) = rule.content { return current }
+                        return deletion
+                    },
+                    set: { rule.content = .pendingDeletion($0) }
+                ),
                 onRemove: onRemove
             )
             .padding(.leading, CGFloat(depth) * indentPerLevel)
@@ -426,6 +439,28 @@ struct BookmarkRuleRow: View {
                     guard let number = Int(value) else { return value }
                     return "\(number) · \(BookmarkFilter.displayName(for: number))"
                 })
+        }
+    }
+}
+
+/// "Pending deletion [excluded / only]": photos the earlier lusia tool
+/// marked for deletion (`Rating < 0`).
+struct PendingDeletionRuleRow: View {
+    @Binding var rule: PendingDeletionRuleDraft
+    let onRemove: () -> Void
+
+    var body: some View {
+        HStack {
+            Text("Pending deletion")
+            Picker("Pending deletion", selection: $rule.isPending) {
+                Text("excluded").tag(false)
+                Text("only").tag(true)
+            }
+            .labelsHidden()
+            .fixedSize()
+            .help("Photos marked for deletion have a negative rating.")
+            Spacer()
+            RemoveRuleButton(accessibilityLabel: "Remove pending deletion rule", action: onRemove)
         }
     }
 }

@@ -218,15 +218,17 @@ for instance, so it isn't offered.
   (`BookmarkFilter.lusiaNames`, from lusia's `src/domain/mod.rs`). The
   column is REAL and nullable, so it's compared as
   `CAST(COALESCE(idBookmark, 0) AS INTEGER)`; NULL is "none".
+- **Pending deletion** (`FilterRule.pendingDeletion`): lusia marks a
+  photo for deletion with `Rating = -1`, so "pending" is
+  `COALESCE(Rating, 0) < 0`. The rule defaults to *excluding* them. It
+  matched 21 photos on 2026-09-23 and none later that day (deleted in
+  Photo Supreme), so expect it to be empty between lusia runs.
 - **Negations**: `RatingFilter.isNot` renders `Rating IS NOT n`,
   SQLite's NULL-safe inequality, so an unknown rating counts as "not n"
   — consistent with "none of" groups. `PathFilter.negated` renders
   `NOT EXISTS`. The label, file type, category and bookmark rules
   already have "none of". The UI offers each as one flat operator
   choice (`RatingComparisonKind.isNot`, `PathOperator`).
-- **Known but not yet offered:** `Rating < 0` is lusia's "pending
-  deletion" (21 photos at -1 on 2026-09-23), which the 0-5 rating
-  stepper can't express.
 
 ## Switching catalogs (File > Open Catalog…)
 

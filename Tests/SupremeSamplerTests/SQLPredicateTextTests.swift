@@ -178,6 +178,15 @@ final class SQLPredicateTextTests: XCTestCase {
         XCTAssertEqual(SQLPredicateText.render(noneOf), "CAST(COALESCE(idBookmark, 0) AS INTEGER) NOT IN (5)")
     }
 
+    // MARK: - Pending deletion
+
+    func test_givenPendingDeletion_whenRendering_thenItIsANegativeRating() {
+        let pending = SampleFilter(root: RuleGroup(match: .all, rules: [.pendingDeletion(true)]))
+        let notPending = SampleFilter(root: RuleGroup(match: .all, rules: [.pendingDeletion(false)]))
+        XCTAssertEqual(SQLPredicateText.render(pending), "COALESCE(Rating, 0) < 0")
+        XCTAssertEqual(SQLPredicateText.render(notPending), "COALESCE(Rating, 0) >= 0")
+    }
+
     // MARK: - Negations
 
     func test_givenRatingIsNot_whenRendering_thenItIsTheNullSafeInequality() {

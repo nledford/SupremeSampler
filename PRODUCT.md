@@ -99,6 +99,8 @@ locally; it is not published by IDimager.
 - Bookmark: is any of / none of the bookmark values in use, named the way the
   earlier lusia tool uses them (none, curated, random uncurated, uncurated,
   hidden).
+- Pending deletion: excluded / only — photos lusia marked for deletion
+  (negative rating).
 - Rules combine in groups — Match all / any / none of — and a group can
   contain nested groups, Lightroom Smart Collection style. A "none of"
   group excludes photos. The builder starts empty (whole catalog).

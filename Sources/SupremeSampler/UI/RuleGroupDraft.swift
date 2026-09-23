@@ -76,6 +76,12 @@ struct BookmarkRuleDraft: Equatable {
     var selectedValues: Set<String> = []
 }
 
+/// A pending-deletion rule as the controls see it. Defaults to leaving
+/// pending photos out -- the likely use in a sampling tool.
+struct PendingDeletionRuleDraft: Equatable {
+    var isPending = false
+}
+
 /// A color-label rule as the controls see it: a match mode and the label
 /// values picked from the catalog's list (`""` is "No label").
 struct LabelRuleDraft: Equatable {
@@ -100,6 +106,7 @@ struct RuleDraft: Identifiable, Equatable {
         case label(LabelRuleDraft)
         case fileType(FileTypeRuleDraft)
         case bookmark(BookmarkRuleDraft)
+        case pendingDeletion(PendingDeletionRuleDraft)
         case group(RuleGroupDraft)
     }
 
@@ -122,6 +129,7 @@ enum NewRuleKind {
     case label
     case fileType
     case bookmark
+    case pendingDeletion
     case group
 }
 
@@ -149,6 +157,7 @@ struct RuleGroupDraft: Identifiable, Equatable {
         case .label: rules.append(RuleDraft(.label(LabelRuleDraft())))
         case .fileType: rules.append(RuleDraft(.fileType(FileTypeRuleDraft())))
         case .bookmark: rules.append(RuleDraft(.bookmark(BookmarkRuleDraft())))
+        case .pendingDeletion: rules.append(RuleDraft(.pendingDeletion(PendingDeletionRuleDraft())))
         case .group: rules.append(RuleDraft(.group(RuleGroupDraft())))
         }
     }
@@ -186,6 +195,8 @@ struct RuleGroupDraft: Identifiable, Equatable {
                 case .bookmark(let bookmark):
                     return .bookmark(
                         BookmarkFilter(values: bookmark.selectedValues.compactMap(Int.init).sorted(), mode: bookmark.mode))
+                case .pendingDeletion(let deletion):
+                    return .pendingDeletion(deletion.isPending)
                 case .group(let group):
                     return .group(group.domainGroup(resolvingCategoriesIn: tree))
                 }

@@ -186,7 +186,7 @@ final class PredicateConsistencyTests: XCTestCase {
     }
 
     private func randomRule(depth: Int, using rng: inout SeededGenerator) -> FilterRule {
-        switch Int.random(in: 0..<(depth > 0 ? 7 : 6), using: &rng) {
+        switch Int.random(in: 0..<(depth > 0 ? 8 : 7), using: &rng) {
         case 0:
             let value = Int.random(in: 0...5, using: &rng)
             return .rating(
@@ -217,6 +217,8 @@ final class PredicateConsistencyTests: XCTestCase {
         case 5:
             let values = (0..<Int.random(in: 0...3, using: &rng)).map { _ in [0, 2, 3, 4, 5, 9].randomElement(using: &rng)! }
             return .bookmark(BookmarkFilter(values: values, mode: [ValueMatchMode.any, .none].randomElement(using: &rng)!))
+        case 6:
+            return .pendingDeletion(Bool.random(using: &rng))
         default:
             return .group(randomGroup(depth: depth - 1, using: &rng))
         }
@@ -280,6 +282,8 @@ final class PredicateConsistencyTests: XCTestCase {
         case .bookmark(let bookmark):
             let value = Int(item.bookmark ?? 0)
             return bookmark.mode == .any ? bookmark.values.contains(value) : !bookmark.values.contains(value)
+        case .pendingDeletion(let isPending):
+            return ((item.rating ?? 0) < 0) == isPending
         case .group(let group):
             return oracleMatches(group, item)
         }

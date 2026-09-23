@@ -750,6 +750,35 @@ final class PhotoSupremeCatalogTests: XCTestCase {
         XCTAssertEqual(matches, 6, "including the NULL-bookmark photo")
     }
 
+    // MARK: - Pending deletion (Rating < 0, the earlier lusia tool's convention)
+
+    private func makeDeletionFixture() throws {
+        try makeFixture([
+            FixtureItem(guid: "pending", rating: -1),
+            FixtureItem(guid: "unrated", rating: 0),
+            FixtureItem(guid: "rated", rating: 4),
+            FixtureItem(guid: "null", rating: nil),
+        ])
+    }
+
+    func test_givenPendingDeletion_whenCountingMatches_thenOnlyNegativelyRatedPhotosMatch() async throws {
+        try makeDeletionFixture()
+
+        let matches = try await PhotoSupremeCatalog(path: fixturePath).matchingItemCount(
+            for: SampleFilter(root: RuleGroup(match: .all, rules: [.pendingDeletion(true)])))
+
+        XCTAssertEqual(matches, 1)
+    }
+
+    func test_givenNotPendingDeletion_whenCountingMatches_thenEverythingElseMatchesIncludingUnknownRatings() async throws {
+        try makeDeletionFixture()
+
+        let matches = try await PhotoSupremeCatalog(path: fixturePath).matchingItemCount(
+            for: SampleFilter(root: RuleGroup(match: .all, rules: [.pendingDeletion(false)])))
+
+        XCTAssertEqual(matches, 3)
+    }
+
     // MARK: - Negated comparisons
 
     func test_givenRatingIsNot_whenCountingMatches_thenEveryOtherRatingMatchesIncludingUnknown() async throws {
