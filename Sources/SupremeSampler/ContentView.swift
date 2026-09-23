@@ -13,7 +13,8 @@ struct ContentView: View {
     // `@StateObject` -- this view owns the model's lifetime (it's
     // created once, here, and survives view re-renders), and mutations
     // to any of its properties trigger re-renders of whatever reads them.
-    @State private var model = SampleBuilderModel()
+    // The one place the real, `UserDefaults`-backed store is chosen.
+    @State private var model = SampleBuilderModel(catalogStore: UserDefaultsRecentCatalogStore())
 
     // Backs the menu-bar "Open Catalog…" command (see
     // `SupremeSamplerApp.commands`) -- unlike `CatalogPickerView`'s own
@@ -24,8 +25,8 @@ struct ContentView: View {
     @State private var isPickingCatalog = false
 
     /// Plain default init for real use (`ContentView()` in
-    /// `SupremeSamplerApp`) -- relies on `model`'s own
-    /// `= SampleBuilderModel()` default above. Declared explicitly only
+    /// `SupremeSamplerApp`) -- relies on `model`'s own default
+    /// value above. Declared explicitly only
     /// because defining the `model:` init below (needed for testing)
     /// suppresses Swift's normally-automatic memberwise init.
     init() {}

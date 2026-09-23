@@ -8,8 +8,8 @@ import XCTest
 /// launch fell back to the picker. The test bundle runs inside the app
 /// process and shares its `UserDefaults` domain, and most tests built
 /// `SampleBuilderModel()` -- which silently defaulted to the real,
-/// `UserDefaults`-backed store. This guards the `forTesting()` helper
-/// every test now uses instead.
+/// `UserDefaults`-backed store. That default no longer exists; this
+/// guards the `forTesting()` helper every test now uses.
 @MainActor
 final class SavedCatalogPathIsolationTests: XCTestCase {
     private static let savedPathKey = "recentCatalogPath"

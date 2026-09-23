@@ -71,6 +71,16 @@ string is enough. If sandboxing is ever added, this is the other place
 (besides the `CatalogPickerView` comment already flagging it) that
 would need revisiting.
 
+`SampleBuilderModel.init(catalogStore:)` deliberately has **no default
+store**. It used to default to the real `UserDefaults` store, and since
+the test bundle runs inside the app and shares its `UserDefaults`
+domain, every test that opened a fixture overwrote the user's
+remembered catalog path. `ContentView` is the one place that picks the
+real store; previews and tests use `InMemoryRecentCatalogStore`, and
+tests build models with `SampleBuilderModel.forTesting()`
+(`Tests/.../TestSupport.swift`). `SavedCatalogPathIsolationTests`
+guards this.
+
 **Catalog calls run asynchronously**, via GRDB's own `async`
 `DatabasePool.read` overload (`PhotoSupremeCatalog`'s methods are all
 `async throws`) — not a hand-rolled `Task.detached`. This used to be

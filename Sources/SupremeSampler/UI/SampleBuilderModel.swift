@@ -41,12 +41,16 @@ final class SampleBuilderModel {
     private var catalog: (any SampleBuilderCatalog)?
 
     /// Where "which catalog was last opened" is persisted across app
-    /// launches. Defaults to the real `UserDefaults`-backed
-    /// implementation; tests substitute an in-memory fake, the same
-    /// pattern as `catalog`/`SampleBuilderCatalog`.
+    /// launches, the same port pattern as `catalog`/`SampleBuilderCatalog`.
     private let catalogStore: any RecentCatalogStore
 
-    init(catalogStore: any RecentCatalogStore = UserDefaultsRecentCatalogStore()) {
+    /// Deliberately no default for `catalogStore`: it used to default to
+    /// the real `UserDefaults` store, and every test that wrote
+    /// `SampleBuilderModel()` and opened a fixture overwrote the real
+    /// app's remembered catalog path. Now the choice is explicit --
+    /// `ContentView` passes the real store; previews and tests pass
+    /// `InMemoryRecentCatalogStore` -- and forgetting is a compile error.
+    init(catalogStore: any RecentCatalogStore) {
         self.catalogStore = catalogStore
     }
 
