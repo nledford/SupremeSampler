@@ -226,6 +226,23 @@ struct PhotoSupremeCatalog: Sendable {
         }
     }
 
+    /// Every distinct color label with its photo count, most common first
+    /// (ties by value), NULL folded into `""` ("no label"). Uses the
+    /// `idLabel` index; ~0.2s on the real catalog.
+    func listLabels() async throws -> [ValueCount] {
+        try await dbPool.read { db in
+            try Row.fetchAll(
+                db,
+                sql: """
+                    SELECT COALESCE(idLabel, '') AS label, COUNT(*) AS photos
+                    FROM idCatalogItem
+                    GROUP BY label
+                    ORDER BY photos DESC, label
+                    """
+            ).map { ValueCount(value: $0["label"], count: $0["photos"]) }
+        }
+    }
+
     /// Shared by `catalogItemExtent()` and `sampleGUIDs`, both of which
     /// need it. Takes an already-open `Database` (rather than reading
     /// from `dbPool` itself) so `sampleGUIDs` can call this and
@@ -280,6 +297,7 @@ struct PhotoSupremeCatalog: Sendable {
         case .rating(let rating): return ratingPredicate(rating)
         case .category(let category): return categoryPredicate(category)
         case .path(let path): return pathPredicate(path)
+        case .label(let label): return labelPredicate(label)
         case .group(let group): return groupPredicate(group)
         }
     }
@@ -300,6 +318,20 @@ struct PhotoSupremeCatalog: Sendable {
         case .all: return "(\(predicates.joined(separator: " AND ")))"
         case .any: return "(\(predicates.joined(separator: " OR ")))"
         case .none: return "NOT COALESCE((\(predicates.joined(separator: " OR "))), 0)"
+        }
+    }
+
+    /// `COALESCE(idLabel, '')` treats a NULL label as "no label" (`""`),
+    /// which also keeps "none of" from dropping unlabeled photos:
+    /// `NULL NOT IN (...)` is NULL, not true. An empty pick is vacuous,
+    /// like an empty category list.
+    private static func labelPredicate(_ label: LabelFilter) -> SQL {
+        guard !label.labels.isEmpty else {
+            return label.mode == .any ? "0 = 1" : "1 = 1"
+        }
+        switch label.mode {
+        case .any: return "COALESCE(idLabel, '') IN \(label.labels)"
+        case .none: return "COALESCE(idLabel, '') NOT IN \(label.labels)"
         }
     }
 

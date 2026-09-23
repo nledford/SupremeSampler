@@ -33,6 +33,8 @@ import Observation
 final class SampleBuilderModel {
     private(set) var catalogPath: String?
     private(set) var propTree: [CatalogPropNode] = []
+    /// The open catalog's color labels, for the label rule's picker.
+    private(set) var catalogLabels: CatalogValues = .loading
     private(set) var matchingCount: Int?
     private(set) var errorMessage: String?
     private(set) var isOpeningCatalog = false
@@ -179,6 +181,12 @@ final class SampleBuilderModel {
             do {
                 let opened = try PhotoSupremeCatalog(path: path)
                 propTree = try await opened.listPropTree()
+                catalogLabels = .loading
+                do {
+                    catalogLabels = .loaded(try await opened.listLabels())
+                } catch {
+                    catalogLabels = .failed(error.localizedDescription)
+                }
                 catalog = opened
                 catalogPath = path
                 catalogStore.savePath(path)

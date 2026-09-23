@@ -41,12 +41,19 @@ final class PhotoSupremeCatalogTests: XCTestCase {
         /// Full file path: folder (with trailing slash) plus file name,
         /// stored the way the real catalog splits them.
         let path: String
+        /// Color label text as stored; `""` is "no label", `nil` writes
+        /// SQL NULL (which also means no label).
+        let label: String?
 
-        init(guid: String = UUID().uuidString, rating: Int? = 0, propGUIDs: [String] = [], path: String? = nil) {
+        init(
+            guid: String = UUID().uuidString, rating: Int? = 0, propGUIDs: [String] = [], path: String? = nil,
+            label: String? = ""
+        ) {
             self.guid = guid
             self.rating = rating
             self.propGUIDs = propGUIDs
             self.path = path ?? "/Volumes/Test/photos/\(guid).jpg"
+            self.label = label
         }
     }
 
@@ -66,7 +73,8 @@ final class PhotoSupremeCatalogTests: XCTestCase {
                         GUID TEXT PRIMARY KEY,
                         Rating INTEGER,
                         PathGUID TEXT,
-                        FileName TEXT
+                        FileName TEXT,
+                        idLabel TEXT
                     )
                     """)
             // The real catalog's absolute folder paths (trailing slash,
@@ -106,8 +114,8 @@ final class PhotoSupremeCatalogTests: XCTestCase {
                         arguments: [folder, folder])
                 }
                 try db.execute(
-                    sql: "INSERT INTO idCatalogItem (GUID, Rating, PathGUID, FileName) VALUES (?, ?, ?, ?)",
-                    arguments: [item.guid, item.rating, folder, fileName]
+                    sql: "INSERT INTO idCatalogItem (GUID, Rating, PathGUID, FileName, idLabel) VALUES (?, ?, ?, ?, ?)",
+                    arguments: [item.guid, item.rating, folder, fileName, item.label]
                 )
                 for propGUID in item.propGUIDs {
                     try db.execute(
@@ -550,6 +558,78 @@ final class PhotoSupremeCatalogTests: XCTestCase {
                 root: RuleGroup(match: .none, rules: [.path(PathFilter(kind: .contains, text: "/Travel/"))])))
 
         XCTAssertEqual(matches, 5)
+    }
+
+    // MARK: - Color labels
+
+    /// Labels are free text in the real catalog, including imports from
+    /// other apps and languages ("選択" is Japanese for "Select").
+    private func makeLabelFixture() throws {
+        try makeFixture([
+            FixtureItem(guid: "select-1", label: "Select"),
+            FixtureItem(guid: "select-2", label: "Select"),
+            FixtureItem(guid: "select-ja", label: "選択"),
+            FixtureItem(guid: "red", label: "Red"),
+            FixtureItem(guid: "empty", label: ""),
+            FixtureItem(guid: "null", label: nil),
+        ])
+    }
+
+    private func labelCount(_ mode: ValueMatchMode, _ labels: [String]) async throws -> Int {
+        try await PhotoSupremeCatalog(path: fixturePath).matchingItemCount(
+            for: SampleFilter(root: RuleGroup(match: .all, rules: [.label(LabelFilter(labels: labels, mode: mode))])))
+    }
+
+    func test_givenACatalog_whenListingLabels_thenEachStoredValueComesWithItsCountMostCommonFirst() async throws {
+        try makeLabelFixture()
+
+        let labels = try await PhotoSupremeCatalog(path: fixturePath).listLabels()
+
+        XCTAssertEqual(
+            labels,
+            [
+                ValueCount(value: "", count: 2),
+                ValueCount(value: "Select", count: 2),
+                ValueCount(value: "Red", count: 1),
+                ValueCount(value: "選択", count: 1),
+            ],
+            "NULL and empty both mean no label; ties sort by value")
+    }
+
+    func test_givenAnyOfLabels_whenCountingMatches_thenPhotosWithEitherLabelMatch() async throws {
+        try makeLabelFixture()
+
+        let matches = try await labelCount(.any, ["Select", "選択"])
+
+        XCTAssertEqual(matches, 3)
+    }
+
+    func test_givenAnyOfNoLabel_whenCountingMatches_thenUnlabeledPhotosMatchWhetherEmptyOrNull() async throws {
+        try makeLabelFixture()
+
+        let matches = try await labelCount(.any, [""])
+
+        XCTAssertEqual(matches, 2)
+    }
+
+    func test_givenNoneOfALabel_whenCountingMatches_thenUnlabeledPhotosAreKept() async throws {
+        // `idLabel NOT IN ('Red')` is NULL, not true, for a NULL label;
+        // an unlabeled photo must still count as "not Red".
+        try makeLabelFixture()
+
+        let matches = try await labelCount(.none, ["Red"])
+
+        XCTAssertEqual(matches, 5)
+    }
+
+    func test_givenNoLabelsPicked_whenCountingMatches_thenAnyOfMatchesNothingAndNoneOfMatchesEverything() async throws {
+        try makeLabelFixture()
+
+        let anyOfNothing = try await labelCount(.any, [])
+        let noneOfNothing = try await labelCount(.none, [])
+
+        XCTAssertEqual(anyOfNothing, 0)
+        XCTAssertEqual(noneOfNothing, 6)
     }
 
     // MARK: - matchingItemCount: combined rating + category

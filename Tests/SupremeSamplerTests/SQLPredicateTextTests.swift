@@ -142,6 +142,18 @@ final class SQLPredicateTextTests: XCTestCase {
         XCTAssertTrue(sql.contains("LIKE '%Lil' || char(8217) ESCAPE"))
     }
 
+    // MARK: - Color label
+
+    func test_givenAnyOfLabels_whenRendering_thenNonASCIILabelsAreBuiltFromCodePoints() {
+        let filter = SampleFilter(root: RuleGroup(match: .all, rules: [.label(LabelFilter(labels: ["Select", "選択"], mode: .any))]))
+        XCTAssertEqual(SQLPredicateText.render(filter), "COALESCE(idLabel, '') IN ('Select', char(36984, 25246))")
+    }
+
+    func test_givenNoneOfLabels_whenRendering_thenUnlabeledPhotosStayIncluded() {
+        let filter = SampleFilter(root: RuleGroup(match: .all, rules: [.label(LabelFilter(labels: ["Red"], mode: .none))]))
+        XCTAssertEqual(SQLPredicateText.render(filter), "COALESCE(idLabel, '') NOT IN ('Red')")
+    }
+
     // MARK: - Combined, and SQL-string-literal escaping of GUID values
 
     func test_givenRatingAndCategory_whenRendering_thenJoinsWithAND() {

@@ -90,7 +90,8 @@ struct SampleBuilderView: View {
             }
 
             Section("Rules") {
-                RuleGroupEditor(group: $model.rules, propTree: model.propTree, depth: 0, onRemove: nil)
+                RuleGroupEditor(
+                    group: $model.rules, propTree: model.propTree, depth: 0, onRemove: nil, labels: model.catalogLabels)
             }
 
             Section("Preview") {

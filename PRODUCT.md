@@ -90,6 +90,9 @@ locally; it is not published by IDimager.
 - File path: contains / starts with / ends with some text, against the full
   path (volume folder plus file name), ignoring A–Z case. `%`, `_` and `\`
   are literal.
+- Color label: is any of / none of the label values stored in the catalog,
+  listed with counts. Labels are free text there, including imports from
+  other apps and languages; they're shown as stored, not merged.
 - Rules combine in groups — Match all / any / none of — and a group can
   contain nested groups, Lightroom Smart Collection style. A "none of"
   group excludes photos. The builder starts empty (whole catalog).

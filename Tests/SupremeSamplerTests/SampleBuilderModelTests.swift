@@ -34,7 +34,8 @@ final class SampleBuilderModelTests: XCTestCase {
                 sql: """
                     CREATE TABLE idCatalogItem (
                         GUID TEXT PRIMARY KEY,
-                        Rating INTEGER NOT NULL DEFAULT 0
+                        Rating INTEGER NOT NULL DEFAULT 0,
+                        idLabel TEXT
                     )
                     """)
             try db.execute(
@@ -62,8 +63,8 @@ final class SampleBuilderModelTests: XCTestCase {
                     """)
             for i in 1...rowCount {
                 try db.execute(
-                    sql: "INSERT INTO idCatalogItem (GUID, Rating) VALUES (?, ?)",
-                    arguments: ["item-\(i)", 0]
+                    sql: "INSERT INTO idCatalogItem (GUID, Rating, idLabel) VALUES (?, ?, ?)",
+                    arguments: ["item-\(i)", 0, i == 1 ? "Select" : ""]
                 )
             }
             // A single top-level category with no children -- enough
@@ -438,6 +439,22 @@ final class SampleBuilderModelTests: XCTestCase {
 
         XCTAssertNil(model.matchingCount)
         XCTAssertFalse(model.isCountingMatches)
+    }
+
+    // MARK: - Values listed from the catalog
+
+    func test_givenACatalogOpens_whenItFinishes_thenItsLabelsAreListedWithCounts() async throws {
+        let model = SampleBuilderModel.forTesting()
+
+        model.openCatalog(at: try makeFixturePath(rowCount: 3))
+        await model.waitForPendingCatalogOpenForTesting()
+
+        XCTAssertEqual(
+            model.catalogLabels, .loaded([ValueCount(value: "", count: 2), ValueCount(value: "Select", count: 1)]))
+    }
+
+    func test_givenNoCatalogOpen_whenAskingForLabels_thenTheyAreStillLoading() {
+        XCTAssertEqual(SampleBuilderModel.forTesting().catalogLabels, .loading)
     }
 
     // MARK: - Remembering the last-opened catalog

@@ -22,6 +22,7 @@ enum FilterRule: Equatable {
     case rating(RatingFilter)
     case category(CategoryFilter)
     case path(PathFilter)
+    case label(LabelFilter)
     case group(RuleGroup)
 }
 

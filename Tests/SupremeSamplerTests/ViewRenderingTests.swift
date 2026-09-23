@@ -173,6 +173,7 @@ final class ViewRenderingTests: XCTestCase {
             .category(CategoryRuleDraft()),
             .category(CategoryRuleDraft(mode: .all, selectedGUIDs: ["prop-pines"])),
             .path(PathRuleDraft()),
+            .label(LabelRuleDraft()),
             .group(RuleGroupDraft(match: .none, rules: [RuleDraft(.rating(RatingRuleDraft()))])),
         ] {
             _ = RuleRow(rule: .constant(RuleDraft(content)), propTree: nestedTree, depth: 1, onRemove: {}).body
@@ -191,6 +192,15 @@ final class ViewRenderingTests: XCTestCase {
     func test_givenAPathRule_whenBuildingItsRow_thenEachKindRenders() {
         for kind in PathMatchKind.allCases {
             _ = PathRuleRow(rule: .constant(PathRuleDraft(kind: kind, text: "/2019/")), onRemove: {}).body
+        }
+    }
+
+    func test_givenALabelRule_whenBuildingItsRow_thenEachLoadStateRenders() {
+        let loaded = CatalogValues.loaded([ValueCount(value: "", count: 3), ValueCount(value: "選択", count: 1)])
+        for values in [CatalogValues.loading, loaded, .failed("no idLabel column")] {
+            _ = LabelRuleRow(
+                rule: .constant(LabelRuleDraft(mode: .none, selectedLabels: [""])), labels: values, onRemove: {}
+            ).body
         }
     }
 

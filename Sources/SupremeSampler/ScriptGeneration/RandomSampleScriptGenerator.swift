@@ -229,6 +229,10 @@ enum RandomSampleScriptGenerator {
         case .rating(let rating): return [indent + "Rating filter: \(describe(rating))"]
         case .category(let category): return [indent + "Category filter: \(describe(category))"]
         case .path(let path): return [indent + "Path filter: \(describe(path))"]
+        case .label(let label):
+            let count = label.labels.count
+            let mode = label.mode == .any ? "any of" : "none of"
+            return [indent + "Label filter: \(mode) \(count) label\(count == 1 ? "" : "s")"]
         case .group(let group): return groupSummaryLines(group, indent: indent)
         }
     }

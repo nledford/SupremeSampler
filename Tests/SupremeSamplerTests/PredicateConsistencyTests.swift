@@ -39,6 +39,7 @@ final class PredicateConsistencyTests: XCTestCase {
         let rating: Int?
         let propGUIDs: [String]
         var path: String? = nil
+        var label: String? = ""
 
         /// Full file path: folder (with trailing slash) plus file name.
         var fullPath: String { path ?? "/Volumes/Test/photos/\(guid).jpg" }
@@ -54,7 +55,8 @@ final class PredicateConsistencyTests: XCTestCase {
                         GUID TEXT PRIMARY KEY,
                         Rating INTEGER,
                         PathGUID TEXT,
-                        FileName TEXT
+                        FileName TEXT,
+                        idLabel TEXT
                     )
                     """)
             // The real catalog's absolute folder paths (trailing slash,
@@ -84,8 +86,8 @@ final class PredicateConsistencyTests: XCTestCase {
                         arguments: [folder, folder])
                 }
                 try db.execute(
-                    sql: "INSERT INTO idCatalogItem (GUID, Rating, PathGUID, FileName) VALUES (?, ?, ?, ?)",
-                    arguments: [item.guid, item.rating, folder, fileName]
+                    sql: "INSERT INTO idCatalogItem (GUID, Rating, PathGUID, FileName, idLabel) VALUES (?, ?, ?, ?, ?)",
+                    arguments: [item.guid, item.rating, folder, fileName, item.label]
                 )
                 for propGUID in item.propGUIDs {
                     try db.execute(
@@ -179,7 +181,7 @@ final class PredicateConsistencyTests: XCTestCase {
     }
 
     private func randomRule(depth: Int, using rng: inout SeededGenerator) -> FilterRule {
-        switch Int.random(in: 0..<(depth > 0 ? 4 : 3), using: &rng) {
+        switch Int.random(in: 0..<(depth > 0 ? 5 : 4), using: &rng) {
         case 0:
             let value = Int.random(in: 0...5, using: &rng)
             return .rating([RatingFilter.exactly(value), .atLeast(value), .atMost(value)].randomElement(using: &rng)!)
@@ -195,6 +197,11 @@ final class PredicateConsistencyTests: XCTestCase {
             let texts = ["", "/2019/", "/travel/", "2019/IMG_", "LE_O", "100%", "Lil’", ".PNG", "/Volumes/Test/", "x\\y"]
             let kind = [PathMatchKind.startsWith, .endsWith, .contains].randomElement(using: &rng)!
             return .path(PathFilter(kind: kind, text: texts.randomElement(using: &rng)!))
+        case 3:
+            let pool = ["", "Select", "選択", "Red", "O'Brien", "Missing"]
+            let labels = (0..<Int.random(in: 0...3, using: &rng)).map { _ in pool.randomElement(using: &rng)! }
+            let mode = [ValueMatchMode.any, .none].randomElement(using: &rng)!
+            return .label(LabelFilter(labels: labels, mode: mode))
         default:
             return .group(randomGroup(depth: depth - 1, using: &rng))
         }
@@ -235,6 +242,12 @@ final class PredicateConsistencyTests: XCTestCase {
             case .endsWith: return fullPath.hasSuffix(text)
             case .contains: return text.isEmpty || fullPath.contains(text)
             }
+        case .label(let label):
+            let value = item.label ?? ""
+            switch label.mode {
+            case .any: return label.labels.contains(value)
+            case .none: return !label.labels.contains(value)
+            }
         case .group(let group):
             return oracleMatches(group, item)
         }
@@ -271,6 +284,11 @@ final class PredicateConsistencyTests: XCTestCase {
             FixtureItem(guid: "pct", rating: 0, propGUIDs: ["catB"], path: "/Volumes/Photos/100% crop/a.jpg"),
             FixtureItem(guid: "curly", rating: 4, propGUIDs: [], path: "/Volumes/Photos/Lil’ Dress/b.jpg"),
             FixtureItem(guid: "backslash", rating: 1, propGUIDs: [], path: "/Volumes/Photos/x\\y/c.jpg"),
+            FixtureItem(guid: "sel", rating: 3, propGUIDs: ["catA"], label: "Select"),
+            FixtureItem(guid: "sel-ja", rating: nil, propGUIDs: [], label: "選択"),
+            FixtureItem(guid: "red-null-path", rating: 2, propGUIDs: ["catB"], label: "Red"),
+            FixtureItem(guid: "quote", rating: 0, propGUIDs: [], label: "O'Brien"),
+            FixtureItem(guid: "null-label", rating: 5, propGUIDs: [], label: nil),
         ]
         try makeFixture(items)
         let catalog = try PhotoSupremeCatalog(path: fixturePath)

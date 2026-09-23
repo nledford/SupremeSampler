@@ -46,6 +46,7 @@ enum SQLPredicateText {
         case .rating(let rating): return ratingClause(rating)
         case .category(let category): return categoryClause(category)
         case .path(let path): return pathClause(path)
+        case .label(let label): return labelClause(label)
         case .group(let group): return groupClause(group, isRoot: false)
         }
     }
@@ -72,6 +73,15 @@ enum SQLPredicateText {
             // silently excluding the photo from both sides.
             return "NOT COALESCE((" + clauses.joined(separator: " OR ") + "), 0)"
         }
+    }
+
+    /// Same shape and reasoning as `PhotoSupremeCatalog.labelPredicate`.
+    private static func labelClause(_ label: LabelFilter) -> String {
+        guard !label.labels.isEmpty else {
+            return label.mode == .any ? "0 = 1" : "1 = 1"
+        }
+        let list = label.labels.map(SQLStringLiteral.render).joined(separator: ", ")
+        return "COALESCE(idLabel, '') " + (label.mode == .any ? "IN" : "NOT IN") + " (" + list + ")"
     }
 
     /// Same shape as `PhotoSupremeCatalog.pathPredicate`.

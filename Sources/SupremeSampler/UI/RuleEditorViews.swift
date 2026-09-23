@@ -29,6 +29,8 @@ struct RuleGroupEditor: View {
     /// `nil` for the root group, which can't be removed. `(() -> Void)?`
     /// is an optional closure, like `(() => void) | undefined` in TS.
     let onRemove: (() -> Void)?
+    /// The catalog's color labels, for label rules' pickers.
+    var labels: CatalogValues = .loading
 
     var body: some View {
         // Kept short and on one line: the sidebar is narrow, and a row
@@ -51,6 +53,7 @@ struct RuleGroupEditor: View {
                 Button("Rating rule") { group.add(.rating) }
                 Button("Category rule") { group.add(.category) }
                 Button("File path rule") { group.add(.path) }
+                Button("Color label rule") { group.add(.label) }
                 Divider()
                 Button("Nested group") { group.add(.group) }
             } label: {
@@ -84,7 +87,8 @@ struct RuleGroupEditor: View {
                 rule: binding(for: rule),
                 propTree: propTree,
                 depth: depth + 1,
-                onRemove: { group.removeRule(id: rule.id) }
+                onRemove: { group.removeRule(id: rule.id) },
+                labels: labels
             )
         }
     }
@@ -120,6 +124,7 @@ struct RuleRow: View {
     let propTree: [CatalogPropNode]
     let depth: Int
     let onRemove: () -> Void
+    var labels: CatalogValues = .loading
 
     var body: some View {
         // `switch` over an enum with payloads, like Rust's `match`; each
@@ -163,6 +168,19 @@ struct RuleRow: View {
                 onRemove: onRemove
             )
             .padding(.leading, CGFloat(depth) * indentPerLevel)
+        case .label(let label):
+            LabelRuleRow(
+                rule: Binding(
+                    get: {
+                        if case .label(let current) = rule.content { return current }
+                        return label
+                    },
+                    set: { rule.content = .label($0) }
+                ),
+                labels: labels,
+                onRemove: onRemove
+            )
+            .padding(.leading, CGFloat(depth) * indentPerLevel)
         case .group(let group):
             RuleGroupEditor(
                 group: Binding(
@@ -174,7 +192,8 @@ struct RuleRow: View {
                 ),
                 propTree: propTree,
                 depth: depth,
-                onRemove: onRemove
+                onRemove: onRemove,
+                labels: labels
             )
         }
     }
@@ -287,6 +306,74 @@ struct PathRuleRow: View {
                     rule.text = typedText
                 }
             RemoveRuleButton(accessibilityLabel: "Remove path rule", action: onRemove)
+        }
+    }
+}
+
+/// "Label [is any of / is none of]" plus the catalog's labels to pick
+/// from, each with its photo count. Shown exactly as stored -- the real
+/// catalog mixes languages and imported values, and which ones mean the
+/// same thing is the user's call, not the app's.
+struct LabelRuleRow: View {
+    @Binding var rule: LabelRuleDraft
+    let labels: CatalogValues
+    let onRemove: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("Label")
+                Picker("Match", selection: $rule.mode) {
+                    Text("is any of").tag(ValueMatchMode.any)
+                    Text("is none of").tag(ValueMatchMode.none)
+                }
+                .labelsHidden()
+                .fixedSize()
+                Spacer()
+                RemoveRuleButton(accessibilityLabel: "Remove label rule", action: onRemove)
+            }
+            CatalogValuePicker(
+                values: labels, selection: $rule.selectedLabels, noun: "labels", emptyValueName: "No label")
+        }
+    }
+}
+
+/// A multi-select list of values read from the catalog, each with its
+/// photo count, or the state of loading them.
+struct CatalogValuePicker: View {
+    let values: CatalogValues
+    @Binding var selection: Set<String>
+    /// Plural, for messages: "labels", "file types".
+    let noun: String
+    /// How to show the empty-string value, if it's meaningful.
+    var emptyValueName: String = "(none)"
+
+    var body: some View {
+        switch values {
+        case .loading:
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.small)
+                Text("Loading \(noun)…").foregroundStyle(.secondary)
+            }
+        case .failed(let message):
+            Label("Couldn't load \(noun): \(message)", systemImage: "exclamationmark.triangle")
+                .foregroundStyle(.red)
+        case .loaded(let list):
+            List(list, selection: $selection) { item in
+                HStack {
+                    if item.value.isEmpty {
+                        Text(emptyValueName).italic()
+                    } else {
+                        Text(item.value)
+                    }
+                    Spacer()
+                    Text(item.count, format: .number).foregroundStyle(.secondary).monospacedDigit()
+                }
+            }
+            .frame(height: 150)
+            Text("\(selection.count) selected")
+                .foregroundStyle(.secondary)
+                .font(.caption)
         }
     }
 }

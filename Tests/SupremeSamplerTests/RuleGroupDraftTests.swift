@@ -85,6 +85,23 @@ final class RuleGroupDraftTests: XCTestCase {
         XCTAssertEqual(filter(draft).root.rules, [.path(PathFilter(kind: .contains, text: ""))])
     }
 
+    func test_givenAnEmptyGroup_whenAddingALabelRule_thenItMatchesAnyOfNothingUntilLabelsArePicked() {
+        var draft = RuleGroupDraft()
+
+        draft.add(.label)
+
+        XCTAssertEqual(filter(draft).root.rules, [.label(LabelFilter(labels: [], mode: .any))])
+    }
+
+    func test_givenALabelRule_whenPickingLabels_thenTheFilterListsThemInStableOrder() {
+        var draft = RuleGroupDraft()
+        draft.add(.label)
+
+        draft.rules[0].content = .label(LabelRuleDraft(mode: .none, selectedLabels: ["Red", "", "Select"]))
+
+        XCTAssertEqual(filter(draft).root.rules, [.label(LabelFilter(labels: ["", "Red", "Select"], mode: .none))])
+    }
+
     // MARK: - Editing rules
 
     func test_givenARatingRule_whenChangingItsComparisonAndValue_thenTheFilterFollows() {

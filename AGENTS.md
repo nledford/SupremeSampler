@@ -198,6 +198,14 @@ for instance, so it isn't offered.
   matching the folder alone is ~100x faster but misses text spanning
   folder and file name. The row debounces typing (0.4s) so each
   keystroke doesn't start a 2s count.
+- **Color label** (`LabelFilter`): `idLabel` is free text, not a color
+  enum — the real catalog has 51 values including "選択", "Rot" and
+  "$$$/Bridge/Preferences/Label/Red=Select". Listed as stored
+  (`listLabels`, ~0.2s, loaded during open) with "" shown as *No label*;
+  grouping synonyms is deliberately left to the user.
+  `COALESCE(idLabel, '')` makes NULL mean "no label" and keeps
+  `NOT IN` from dropping NULL rows. A failed listing shows in the
+  picker (`CatalogValues.failed`) rather than failing the open.
 
 ## Switching catalogs (File > Open Catalog…)
 
