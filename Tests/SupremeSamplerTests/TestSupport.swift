@@ -31,3 +31,21 @@ enum ReferenceScript {
         return (text, size)
     }
 }
+
+/// Stands in for the system save panel: records what it was asked,
+/// and answers with a fixed destination (or `nil`, for Cancel).
+final class FakeDestinationChooser: ScriptDestinationChoosing {
+    let answer: URL?
+    private(set) var askedFileName: String?
+    private(set) var askedDirectory: URL?
+    private(set) var timesAsked = 0
+
+    init(answer: URL?) { self.answer = answer }
+
+    func chooseDestination(suggestedFileName: String, startingIn directory: URL?) async -> URL? {
+        timesAsked += 1
+        askedFileName = suggestedFileName
+        askedDirectory = directory
+        return answer
+    }
+}

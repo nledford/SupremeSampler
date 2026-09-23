@@ -1,10 +1,9 @@
 import SwiftUI
 
 /// The right-hand pane: a live, read-only preview of the generated
-/// `.psc` source, with a Copy button. Copy-to-clipboard rather than
-/// save-to-file is the deliberate v1 save action here -- paste into
-/// Photo Supreme's Script Studio to review and test before it's ever
-/// written to disk, matching how this was originally described.
+/// `.psc` source, with Copy (paste into Script Studio to try it out) and
+/// Save… (write a `.psc` file, normally into the scripts repo). Save
+/// waits for the pre-flight count -- see `SampleBuilderModel.canSaveScript`.
 struct ScriptPreviewView: View {
     var model: SampleBuilderModel
 
@@ -12,6 +11,10 @@ struct ScriptPreviewView: View {
     /// in-memory fake instead (see `ClipboardWriting`'s doc comment for
     /// why that matters here specifically).
     var clipboard: any ClipboardWriting = SystemClipboard()
+
+    /// Defaults to the real save panel; tests substitute a fake that
+    /// answers with a temp file.
+    var destinationChooser: any ScriptDestinationChoosing = SavePanelDestinationChooser()
 
     @State private var didCopy = false
 
@@ -26,7 +29,19 @@ struct ScriptPreviewView: View {
                 } label: {
                     Label(didCopy ? "Copied" : "Copy", systemImage: didCopy ? "checkmark" : "doc.on.doc")
                 }
+                Button {
+                    // A button action is synchronous; `Task { ... }` starts
+                    // the async save without blocking it, like calling an
+                    // `async` function without awaiting it in JS.
+                    Task { await saveScript() }
+                } label: {
+                    Label("Save…", systemImage: "square.and.arrow.down")
+                }
+                .disabled(!model.canSaveScript)
+                .help(model.canSaveScript ? "Save as a .psc file" : "Available once the match count has finished")
             }
+
+            saveStatus
 
             ScrollView {
                 Text(model.generatedScript)
@@ -40,6 +55,44 @@ struct ScriptPreviewView: View {
         }
         .padding()
         .frame(minWidth: 420)
+        // Offers this window's save action to the File menu's "Save
+        // Script…" command (see `SaveScriptCommands`). Scoped to the
+        // focused window, so with two windows open, ⌘S saves the front
+        // one, and the menu item greys out when saving isn't possible.
+        .focusedSceneValue(
+            \.saveScriptAction,
+            SaveScriptAction(isEnabled: model.canSaveScript) {
+                Task { await saveScript() }
+            }
+        )
+    }
+
+    /// What happened to the last save: the file it went to (while the
+    /// script on screen still matches it), or why it failed.
+    @ViewBuilder
+    private var saveStatus: some View {
+        if let url = model.lastSavedScriptURL {
+            HStack(spacing: 6) {
+                Label("Saved \(url.lastPathComponent)", systemImage: "checkmark.circle")
+                    .foregroundStyle(.secondary)
+                Button("Show in Finder") {
+                    NSWorkspace.shared.activateFileViewerSelecting([url])
+                }
+                .buttonStyle(.link)
+            }
+            .font(.callout)
+        } else if let message = model.saveErrorMessage {
+            Label(message, systemImage: "exclamationmark.triangle")
+                .foregroundStyle(.red)
+                .font(.callout)
+        }
+    }
+
+    /// Opens the save panel in the scripts repo (when it exists) and
+    /// writes the file. `internal`, like `copyToClipboard`, so tests can
+    /// call it directly with a fake chooser.
+    func saveScript() async {
+        await model.saveScript(using: destinationChooser, startingIn: PSCFile.preferredDirectory())
     }
 
     // `internal` (the default), not `private`: lets tests call this

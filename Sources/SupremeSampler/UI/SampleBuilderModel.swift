@@ -37,6 +37,18 @@ final class SampleBuilderModel {
     private(set) var errorMessage: String?
     private(set) var isOpeningCatalog = false
     private(set) var isCountingMatches = false
+    /// Why the last save failed, if it did; cleared by the next success.
+    private(set) var saveErrorMessage: String?
+
+    /// What was last written to disk, and from which filter/size -- kept
+    /// so `lastSavedScriptURL` can tell whether the script on screen
+    /// still matches that file.
+    private struct SavedScript {
+        let url: URL
+        let filter: SampleFilter
+        let sampleSize: Int
+    }
+    private var lastSave: SavedScript?
 
     private var catalog: (any SampleBuilderCatalog)?
 
@@ -195,6 +207,51 @@ final class SampleBuilderModel {
         guard catalogPath == nil else { return }
         guard let path = catalogStore.loadPath() else { return }
         openCatalog(at: path)
+    }
+
+    // MARK: - Saving the script to a file
+
+    /// Saving waits for the pre-flight count: "never let a script be
+    /// generated for a filter the user hasn't seen validated against real
+    /// data" (PRODUCT.md), and a file is the artifact that outlives this
+    /// session. (Copy isn't gated the same way -- pasting into Script
+    /// Studio is itself the review step.)
+    var canSaveScript: Bool {
+        catalog != nil && !isCountingMatches && matchingCount != nil
+    }
+
+    /// The file the on-screen script was last saved to -- but only while
+    /// the script still matches it. Derived, not stored: editing a rule
+    /// or the sample size hides it, and undoing the edit brings it back,
+    /// with no bookkeeping to forget.
+    var lastSavedScriptURL: URL? {
+        guard let lastSave, lastSave.filter == currentFilter, lastSave.sampleSize == sampleSize else { return nil }
+        return lastSave.url
+    }
+
+    /// Asks `chooser` where to save (starting in `directory`), then
+    /// writes the current script there in `.psc` format. Cancelling does
+    /// nothing. The write is atomic -- to a temporary file, then renamed
+    /// into place -- so a failure can't leave a half-written script
+    /// behind, or damage the file being replaced.
+    func saveScript(using chooser: any ScriptDestinationChoosing, startingIn directory: URL?) async {
+        guard canSaveScript else { return }
+        guard
+            let destination = await chooser.chooseDestination(
+                suggestedFileName: PSCFile.suggestedFileName, startingIn: directory)
+        else { return }
+
+        let filter = currentFilter
+        let size = sampleSize
+        let script = RandomSampleScriptGenerator.generate(sampleSize: size, filter: filter)
+        do {
+            try PSCFile.encode(script).write(to: destination, options: .atomic)
+            lastSave = SavedScript(url: destination, filter: filter, sampleSize: size)
+            saveErrorMessage = nil
+        } catch {
+            lastSave = nil
+            saveErrorMessage = "Couldn't save the script: \(error.localizedDescription)"
+        }
     }
 
     /// Surfaces a failure from the system file picker itself (rare --

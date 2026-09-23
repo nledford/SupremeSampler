@@ -236,6 +236,45 @@ final class ViewRenderingTests: XCTestCase {
 
         XCTAssertEqual(clipboard.writtenText, text)
     }
+
+    // MARK: - ScriptPreviewView: saving
+
+    private func countedModel() async -> SampleBuilderModel {
+        let model = SampleBuilderModel.forTesting()
+        model.injectCatalogForTesting(FakeCatalogForViewTests())
+        model.refreshMatchingCount()
+        await model.waitForPendingMatchCountForTesting()
+        return model
+    }
+
+    func test_givenTheSaveButton_whenSaving_thenThePaneSavesThroughItsChooserStartingInTheScriptsRepo() async throws {
+        let destination = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".psc")
+        defer { try? FileManager.default.removeItem(at: destination) }
+        let model = await countedModel()
+        let chooser = FakeDestinationChooser(answer: destination)
+        let view = ScriptPreviewView(model: model, destinationChooser: chooser)
+
+        await view.saveScript()
+
+        XCTAssertEqual(chooser.askedDirectory, PSCFile.preferredDirectory())
+        XCTAssertTrue(FileManager.default.fileExists(atPath: destination.path))
+        XCTAssertEqual(model.lastSavedScriptURL, destination)
+    }
+
+    func test_givenASavedOrFailedSave_whenBuildingScriptPreviewView_thenBodyDoesNotCrash() async {
+        let saved = await countedModel()
+        let destination = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".psc")
+        defer { try? FileManager.default.removeItem(at: destination) }
+        await saved.saveScript(using: FakeDestinationChooser(answer: destination), startingIn: nil)
+        _ = ScriptPreviewView(model: saved, destinationChooser: FakeDestinationChooser(answer: nil)).body
+
+        let failed = await countedModel()
+        await failed.saveScript(
+            using: FakeDestinationChooser(answer: URL(fileURLWithPath: "/nonexistent/\(UUID().uuidString)/A.psc")),
+            startingIn: nil)
+        XCTAssertNotNil(failed.saveErrorMessage)
+        _ = ScriptPreviewView(model: failed, destinationChooser: FakeDestinationChooser(answer: nil)).body
+    }
 }
 
 private final class FakeClipboard: ClipboardWriting, @unchecked Sendable {

@@ -37,10 +37,23 @@ Supreme's own Script Studio.
 `@MainActor`) holds all rule-builder state and derives `SampleFilter`
 and the generated script from it; `CatalogPickerView` (file-open
 gate) → `SampleBuilderView` (rule builder, left pane) +
-`ScriptPreviewView` (live preview + Copy button, right pane), wired
-together in `ContentView`. Copy-to-clipboard is the deliberate v1 save
-action — paste into Script Studio to review and test before anything
-is written to disk; there's no "save to file" yet.
+`ScriptPreviewView` (live preview + Copy and Save… buttons, right
+pane), wired together in `ContentView`.
+
+**Saving writes the committed format, not Script Studio's.**
+`PSCFile` (`ScriptGeneration/PSCFile.swift`) encodes UTF-8, LF, no BOM
+— byte-identical from `const` on to the *committed*
+`RandomCatalogSample.psc`. Script Studio re-saves files as CRLF (seen
+2026-09-23: a hand edit left every line of the working copy changed in
+git); that compiles too, but LF keeps the scripts repo's diffs clean.
+The save panel is behind `ScriptDestinationChoosing` (a port, like
+`ClipboardWriting`), so `ScriptSavingTests` saves real files through a
+fake panel. Save is gated on `canSaveScript` (catalog open, count
+finished) per PRODUCT.md's pre-flight principle; `lastSavedScriptURL`
+is derived — shown only while the on-screen filter and size still match
+the saved file. File > Save Script… (⌘S) reaches the front window via
+`@FocusedValue`/`.focusedSceneValue` (`SaveScriptCommands`), unlike
+Open Catalog…'s older global notification.
 
 **The rule builder edits a draft, not the domain filter.**
 `RuleGroupDraft` (`UI/RuleGroupDraft.swift`) is what the controls bind
