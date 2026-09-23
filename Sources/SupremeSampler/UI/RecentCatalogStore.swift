@@ -46,3 +46,34 @@ struct UserDefaultsRecentCatalogStore: RecentCatalogStore {
         }
     }
 }
+
+/// Keeps the path in memory only, for SwiftUI previews and tests -- any
+/// model that isn't the real app's must use this (or another fake), or
+/// it writes into the real app's saved preferences: the test bundle runs
+/// inside the app and shares its `UserDefaults` domain.
+///
+/// A `final class` (not a struct) so every holder sees the same saved
+/// value, like the real store's shared `UserDefaults`. `@unchecked
+/// Sendable`: the compiler can't verify a class with mutable state is
+/// thread-safe on its own; the lock is what makes it so, the same
+/// promise a Rust `unsafe impl Sync` makes by hand.
+final class InMemoryRecentCatalogStore: RecentCatalogStore, @unchecked Sendable {
+    private let lock = NSLock()
+    private var path: String?
+
+    init(initialPath: String? = nil) {
+        path = initialPath
+    }
+
+    func loadPath() -> String? {
+        lock.lock()
+        defer { lock.unlock() }
+        return path
+    }
+
+    func savePath(_ path: String?) {
+        lock.lock()
+        defer { lock.unlock() }
+        self.path = path
+    }
+}

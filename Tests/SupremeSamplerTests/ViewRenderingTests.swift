@@ -31,12 +31,12 @@ final class ViewRenderingTests: XCTestCase {
     // MARK: - ContentView
 
     func test_givenNoCatalogOpen_whenBuildingContentView_thenBodyDoesNotCrash() {
-        let view = ContentView(model: SampleBuilderModel())
+        let view = ContentView(model: SampleBuilderModel.forTesting())
         _ = view.body
     }
 
     func test_givenCatalogOpen_whenBuildingContentView_thenBodyDoesNotCrash() {
-        let model = SampleBuilderModel()
+        let model = SampleBuilderModel.forTesting()
         model.injectCatalogForTesting(FakeCatalogForViewTests())
         let view = ContentView(model: model)
         _ = view.body
@@ -47,7 +47,7 @@ final class ViewRenderingTests: XCTestCase {
         // directly, the same technique CatalogPickerView's equivalent
         // test below uses -- no way to drive the system Open panel or
         // the app's real menu bar from XCTest.
-        let model = SampleBuilderModel()
+        let model = SampleBuilderModel.forTesting()
         let view = ContentView(model: model)
 
         view.handleCatalogFileImporterResult(.success(URL(fileURLWithPath: "/nonexistent/catalog.cat.db")))
@@ -56,7 +56,7 @@ final class ViewRenderingTests: XCTestCase {
     }
 
     func test_givenFailedPick_whenHandlingCatalogFileImporterResult_thenModelReportsError() {
-        let model = SampleBuilderModel()
+        let model = SampleBuilderModel.forTesting()
         let view = ContentView(model: model)
 
         view.handleCatalogFileImporterResult(.failure(NSError(domain: "test", code: 1)))
@@ -69,7 +69,7 @@ final class ViewRenderingTests: XCTestCase {
         // already-has-a-catalog-open state too, not just the initial
         // picker screen -- this is what distinguishes it from
         // CatalogPickerView's own (first-open-only) handler.
-        let model = SampleBuilderModel()
+        let model = SampleBuilderModel.forTesting()
         model.injectCatalogForTesting(FakeCatalogForViewTests(), propTree: [CatalogPropNode(guid: "g1", name: "Old", children: [])])
         let view = ContentView(model: model)
 
@@ -81,7 +81,7 @@ final class ViewRenderingTests: XCTestCase {
     // MARK: - CatalogPickerView
 
     func test_givenDefaultState_whenBuildingCatalogPickerView_thenBodyDoesNotCrash() {
-        let view = CatalogPickerView(model: SampleBuilderModel())
+        let view = CatalogPickerView(model: SampleBuilderModel.forTesting())
         _ = view.body
     }
 
@@ -89,7 +89,7 @@ final class ViewRenderingTests: XCTestCase {
         // isOpeningCatalog is set synchronously before openCatalog's
         // Task even starts running, so this is observable immediately
         // without awaiting anything.
-        let model = SampleBuilderModel()
+        let model = SampleBuilderModel.forTesting()
         model.openCatalog(at: "/nonexistent/\(UUID().uuidString).sqlite")
         XCTAssertTrue(model.isOpeningCatalog)
 
@@ -98,7 +98,7 @@ final class ViewRenderingTests: XCTestCase {
     }
 
     func test_givenErrorMessage_whenBuildingCatalogPickerView_thenBodyDoesNotCrash() {
-        let model = SampleBuilderModel()
+        let model = SampleBuilderModel.forTesting()
         model.reportPickerFailure(NSError(domain: "test", code: 1))
 
         let view = CatalogPickerView(model: model)
@@ -106,7 +106,7 @@ final class ViewRenderingTests: XCTestCase {
     }
 
     func test_givenSuccessfulPick_whenHandlingFileImporterResult_thenModelStartsOpening() {
-        let model = SampleBuilderModel()
+        let model = SampleBuilderModel.forTesting()
         let view = CatalogPickerView(model: model)
 
         view.handleFileImporterResult(.success(URL(fileURLWithPath: "/nonexistent/catalog.cat.db")))
@@ -118,7 +118,7 @@ final class ViewRenderingTests: XCTestCase {
     }
 
     func test_givenFailedPick_whenHandlingFileImporterResult_thenModelReportsError() {
-        let model = SampleBuilderModel()
+        let model = SampleBuilderModel.forTesting()
         let view = CatalogPickerView(model: model)
 
         view.handleFileImporterResult(.failure(NSError(domain: "test", code: 1)))
@@ -129,12 +129,12 @@ final class ViewRenderingTests: XCTestCase {
     // MARK: - SampleBuilderView
 
     func test_givenDefaultState_whenBuildingSampleBuilderView_thenBodyDoesNotCrash() {
-        let view = SampleBuilderView(model: SampleBuilderModel())
+        let view = SampleBuilderView(model: SampleBuilderModel.forTesting())
         _ = view.body
     }
 
     func test_givenRules_whenBuildingSampleBuilderView_thenBodyDoesNotCrash() {
-        let model = SampleBuilderModel()
+        let model = SampleBuilderModel.forTesting()
         model.rules.add(.rating)
         model.rules.add(.category)
         model.rules.add(.group)
@@ -196,7 +196,7 @@ final class ViewRenderingTests: XCTestCase {
         // refreshMatchingCount(), before the query itself runs, so this
         // is observable without awaiting anything -- same technique as
         // the CatalogPickerView "opening in progress" test above.
-        let model = SampleBuilderModel()
+        let model = SampleBuilderModel.forTesting()
         model.injectCatalogForTesting(FakeCatalogForViewTests(matchDelayNanoseconds: 50_000_000))
         model.refreshMatchingCount()
         XCTAssertTrue(model.isCountingMatches)
@@ -206,7 +206,7 @@ final class ViewRenderingTests: XCTestCase {
     }
 
     func test_givenMatchCountAndError_whenBuildingSampleBuilderView_thenBodyDoesNotCrash() async {
-        let model = SampleBuilderModel()
+        let model = SampleBuilderModel.forTesting()
         model.injectCatalogForTesting(FakeCatalogForViewTests())
         model.refreshMatchingCount()
         await model.waitForPendingMatchCountForTesting()
@@ -219,7 +219,7 @@ final class ViewRenderingTests: XCTestCase {
     // MARK: - ScriptPreviewView
 
     func test_givenGeneratedScript_whenBuildingScriptPreviewView_thenBodyDoesNotCrash() {
-        let view = ScriptPreviewView(model: SampleBuilderModel())
+        let view = ScriptPreviewView(model: SampleBuilderModel.forTesting())
         _ = view.body
     }
 
@@ -229,7 +229,7 @@ final class ViewRenderingTests: XCTestCase {
         // test wrote to the real system clipboard, which leaked a test
         // marker string into it outside the test run entirely.
         let clipboard = FakeClipboard()
-        let view = ScriptPreviewView(model: SampleBuilderModel(), clipboard: clipboard)
+        let view = ScriptPreviewView(model: SampleBuilderModel.forTesting(), clipboard: clipboard)
         let text = "SELECT GUID FROM idCatalogItem;"
 
         view.copyToClipboard(text)

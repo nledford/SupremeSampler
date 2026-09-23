@@ -72,5 +72,5 @@ struct CatalogPickerView: View {
 }
 
 #Preview {
-    CatalogPickerView(model: SampleBuilderModel())
+    CatalogPickerView(model: SampleBuilderModel(catalogStore: InMemoryRecentCatalogStore()))
 }

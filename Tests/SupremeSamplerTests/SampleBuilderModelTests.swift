@@ -86,19 +86,19 @@ final class SampleBuilderModelTests: XCTestCase {
     }
 
     func test_givenANewModel_whenComputingCurrentFilter_thenFilterIsUnconstrained() {
-        let model = SampleBuilderModel()
+        let model = SampleBuilderModel.forTesting()
         XCTAssertEqual(model.currentFilter, SampleFilter())
     }
 
     func test_givenARatingRule_whenComputingCurrentFilter_thenIncludesIt() {
-        let model = SampleBuilderModel()
+        let model = SampleBuilderModel.forTesting()
         model.rules = rules(.all, .rating(RatingRuleDraft(comparison: .atLeast, value: 4)))
 
         XCTAssertEqual(model.currentFilter, SampleFilter(rating: .atLeast(4)))
     }
 
     func test_givenTheOnlyRuleRemoved_whenComputingCurrentFilter_thenFilterIsUnconstrainedAgain() {
-        let model = SampleBuilderModel()
+        let model = SampleBuilderModel.forTesting()
         model.rules.add(.rating)
         model.rules.removeRule(id: model.rules.rules[0].id)
 
@@ -106,7 +106,7 @@ final class SampleBuilderModelTests: XCTestCase {
     }
 
     func test_givenACategoryRule_whenComputingCurrentFilter_thenIncludesIt() {
-        let model = SampleBuilderModel()
+        let model = SampleBuilderModel.forTesting()
         model.rules = rules(.all, .category(CategoryRuleDraft(mode: .all, selectedGUIDs: ["g1", "g2"])))
 
         XCTAssertEqual(
@@ -115,7 +115,7 @@ final class SampleBuilderModelTests: XCTestCase {
     }
 
     func test_givenAnyOfRules_whenComputingCurrentFilter_thenTheRootGroupMatchesAnyOf() {
-        let model = SampleBuilderModel()
+        let model = SampleBuilderModel.forTesting()
         model.rules = rules(
             .any,
             .rating(RatingRuleDraft(comparison: .exactly, value: 5)),
@@ -139,7 +139,7 @@ final class SampleBuilderModelTests: XCTestCase {
     )
 
     func test_givenAParentCategorySelected_whenComputingCurrentFilter_thenItsDescendantsAreIncluded() {
-        let model = SampleBuilderModel()
+        let model = SampleBuilderModel.forTesting()
         model.injectCatalogForTesting(FakeCatalog(), propTree: branchTree)
         model.rules = rules(.all, .category(CategoryRuleDraft(mode: .any, selectedGUIDs: ["prop-pines"])))
 
@@ -150,7 +150,7 @@ final class SampleBuilderModelTests: XCTestCase {
     }
 
     func test_givenAParentCategorySelected_whenGeneratingScript_thenTheScriptMatchesItsDescendants() {
-        let model = SampleBuilderModel()
+        let model = SampleBuilderModel.forTesting()
         model.injectCatalogForTesting(FakeCatalog(), propTree: branchTree)
         model.rules = rules(.all, .category(CategoryRuleDraft(mode: .any, selectedGUIDs: ["cat-nature"])))
 
@@ -163,7 +163,7 @@ final class SampleBuilderModelTests: XCTestCase {
         // shows up as a spurious diff). Compared with the timestamp
         // header stripped, since that legitimately differs.
         func scriptBody(selecting guids: [String]) -> String {
-            let model = SampleBuilderModel()
+            let model = SampleBuilderModel.forTesting()
             model.injectCatalogForTesting(FakeCatalog(), propTree: branchTree)
             model.rules = rules(.all, .category(CategoryRuleDraft(mode: .all, selectedGUIDs: Set(guids))))
             return model.generatedScript
@@ -179,7 +179,7 @@ final class SampleBuilderModelTests: XCTestCase {
     }
 
     func test_givenRatingAndCategoryRules_whenComputingCurrentFilter_thenIncludesBoth() {
-        let model = SampleBuilderModel()
+        let model = SampleBuilderModel.forTesting()
         model.rules = rules(
             .all,
             .rating(RatingRuleDraft(comparison: .exactly, value: 5)),
@@ -191,7 +191,7 @@ final class SampleBuilderModelTests: XCTestCase {
     }
 
     func test_givenSampleSizeAndFilter_whenGeneratingScript_thenReflectsCurrentState() {
-        let model = SampleBuilderModel()
+        let model = SampleBuilderModel.forTesting()
         model.sampleSize = 250
         model.rules = rules(.all, .rating(RatingRuleDraft(comparison: .exactly, value: 5)))
 
@@ -207,7 +207,7 @@ final class SampleBuilderModelTests: XCTestCase {
         // range. Those must not reach `SAMPLE_SIZE = ...` in the
         // generated script -- a size of 0 or less would sample nothing,
         // silently.
-        let model = SampleBuilderModel()
+        let model = SampleBuilderModel.forTesting()
 
         model.sampleSize = 0
         XCTAssertEqual(model.sampleSize, 1)
@@ -241,7 +241,7 @@ final class SampleBuilderModelTests: XCTestCase {
         // gets torn down and rebuilt (picking up the clamped value) on
         // an actual clamp -- not on every keystroke, which would drop
         // focus while the user is mid-edit.
-        let model = SampleBuilderModel()
+        let model = SampleBuilderModel.forTesting()
         let generationBeforeClamp = model.sampleSizeClampGeneration
 
         model.sampleSize = 500 // in range: no clamp, no generation bump
@@ -317,7 +317,7 @@ final class SampleBuilderModelTests: XCTestCase {
 
     func test_givenInjectedCatalog_whenRefreshingMatchingCount_thenUpdatesCountAndClearsLoadingFlag() async {
         let fake = FakeCatalog(responses: [1: .init(result: .success(42))])
-        let model = SampleBuilderModel()
+        let model = SampleBuilderModel.forTesting()
         model.injectCatalogForTesting(fake)
 
         model.refreshMatchingCount()
@@ -330,7 +330,7 @@ final class SampleBuilderModelTests: XCTestCase {
 
     func test_givenCatalogThrows_whenRefreshingMatchingCount_thenSetsErrorAndClearsCount() async {
         let fake = FakeCatalog(responses: [1: .init(result: .failure(FakeError()))])
-        let model = SampleBuilderModel()
+        let model = SampleBuilderModel.forTesting()
         model.injectCatalogForTesting(fake)
 
         model.refreshMatchingCount()
@@ -352,7 +352,7 @@ final class SampleBuilderModelTests: XCTestCase {
             1: .init(delayNanoseconds: 100_000_000, result: .success(100)),  // slow, would-be-stale
             2: .init(delayNanoseconds: 0, result: .success(5)),  // fast, current
         ])
-        let model = SampleBuilderModel()
+        let model = SampleBuilderModel.forTesting()
         model.injectCatalogForTesting(fake)
 
         model.refreshMatchingCount()  // starts call #1 (slow)
@@ -373,7 +373,7 @@ final class SampleBuilderModelTests: XCTestCase {
 
     func test_givenValidCatalogPath_whenOpening_thenLoadsPropsAndMatchCount() async throws {
         let path = try makeFixturePath(rowCount: 3)
-        let model = SampleBuilderModel()
+        let model = SampleBuilderModel.forTesting()
 
         model.openCatalog(at: path)
         await model.waitForPendingCatalogOpenForTesting()
@@ -390,7 +390,7 @@ final class SampleBuilderModelTests: XCTestCase {
     }
 
     func test_givenInvalidCatalogPath_whenOpening_thenSetsErrorAndClearsState() async {
-        let model = SampleBuilderModel()
+        let model = SampleBuilderModel.forTesting()
 
         model.openCatalog(at: "/nonexistent/\(UUID().uuidString).sqlite")
         await model.waitForPendingCatalogOpenForTesting()
@@ -407,7 +407,7 @@ final class SampleBuilderModelTests: XCTestCase {
     /// already opening is a no-op, not a second overlapping attempt.
     func test_givenCatalogAlreadyOpening_whenOpeningAgain_thenSecondCallIsIgnored() async throws {
         let path = try makeFixturePath()
-        let model = SampleBuilderModel()
+        let model = SampleBuilderModel.forTesting()
 
         model.openCatalog(at: path)
         XCTAssertTrue(model.isOpeningCatalog, "first call should have started opening synchronously")
@@ -424,7 +424,7 @@ final class SampleBuilderModelTests: XCTestCase {
         struct FakeError: Error, LocalizedError {
             var errorDescription: String? { "disk unmounted" }
         }
-        let model = SampleBuilderModel()
+        let model = SampleBuilderModel.forTesting()
 
         model.reportPickerFailure(FakeError())
 
@@ -432,7 +432,7 @@ final class SampleBuilderModelTests: XCTestCase {
     }
 
     func test_givenNoCatalogOpen_whenRefreshingMatchingCount_thenClearsCountWithoutError() {
-        let model = SampleBuilderModel()
+        let model = SampleBuilderModel.forTesting()
 
         model.refreshMatchingCount()
 
@@ -442,35 +442,9 @@ final class SampleBuilderModelTests: XCTestCase {
 
     // MARK: - Remembering the last-opened catalog
 
-    /// An in-memory `RecentCatalogStore` fake -- same role as
-    /// `FakeCatalog` above, just for the persistence port instead of the
-    /// query port. `@unchecked Sendable` justified the same way: the
-    /// lock is what actually makes the one piece of mutable state safe
-    /// to touch from a background task.
-    private final class FakeRecentCatalogStore: RecentCatalogStore, @unchecked Sendable {
-        private let lock = NSLock()
-        private var path: String?
-
-        init(initialPath: String? = nil) {
-            path = initialPath
-        }
-
-        func loadPath() -> String? {
-            lock.lock()
-            defer { lock.unlock() }
-            return path
-        }
-
-        func savePath(_ path: String?) {
-            lock.lock()
-            defer { lock.unlock() }
-            self.path = path
-        }
-    }
-
     func test_givenSuccessfulOpen_whenCatalogOpens_thenPathIsSavedToStore() async throws {
         let path = try makeFixturePath()
-        let store = FakeRecentCatalogStore()
+        let store = InMemoryRecentCatalogStore()
         let model = SampleBuilderModel(catalogStore: store)
 
         model.openCatalog(at: path)
@@ -480,7 +454,7 @@ final class SampleBuilderModelTests: XCTestCase {
     }
 
     func test_givenFailedOpen_whenCatalogFailsToOpen_thenPathIsNotSaved() async {
-        let store = FakeRecentCatalogStore()
+        let store = InMemoryRecentCatalogStore()
         let model = SampleBuilderModel(catalogStore: store)
 
         model.openCatalog(at: "/nonexistent/\(UUID().uuidString).sqlite")
@@ -491,7 +465,7 @@ final class SampleBuilderModelTests: XCTestCase {
 
     func test_givenSavedPathThatStillExists_whenAttemptingAutoOpen_thenOpensItAutomatically() async throws {
         let path = try makeFixturePath(rowCount: 2)
-        let store = FakeRecentCatalogStore(initialPath: path)
+        let store = InMemoryRecentCatalogStore(initialPath: path)
         let model = SampleBuilderModel(catalogStore: store)
 
         model.attemptAutoOpenRecentCatalog()
@@ -502,7 +476,7 @@ final class SampleBuilderModelTests: XCTestCase {
     }
 
     func test_givenNoSavedPath_whenAttemptingAutoOpen_thenDoesNothing() {
-        let store = FakeRecentCatalogStore()
+        let store = InMemoryRecentCatalogStore()
         let model = SampleBuilderModel(catalogStore: store)
 
         model.attemptAutoOpenRecentCatalog()
@@ -517,7 +491,7 @@ final class SampleBuilderModelTests: XCTestCase {
     }
 
     func test_givenSavedPathNoLongerExists_whenAttemptingAutoOpen_thenFallsBackWithError() async {
-        let store = FakeRecentCatalogStore(initialPath: "/nonexistent/\(UUID().uuidString).sqlite")
+        let store = InMemoryRecentCatalogStore(initialPath: "/nonexistent/\(UUID().uuidString).sqlite")
         let model = SampleBuilderModel(catalogStore: store)
 
         model.attemptAutoOpenRecentCatalog()
@@ -528,7 +502,7 @@ final class SampleBuilderModelTests: XCTestCase {
     }
 
     func test_givenCatalogAlreadyOpen_whenAttemptingAutoOpen_thenDoesNotReopen() {
-        let store = FakeRecentCatalogStore(initialPath: "/some/other/path.sqlite")
+        let store = InMemoryRecentCatalogStore(initialPath: "/some/other/path.sqlite")
         let model = SampleBuilderModel(catalogStore: store)
         model.injectCatalogForTesting(FakeCatalog())
 

@@ -57,5 +57,5 @@ struct ScriptPreviewView: View {
 }
 
 #Preview {
-    ScriptPreviewView(model: SampleBuilderModel())
+    ScriptPreviewView(model: SampleBuilderModel(catalogStore: InMemoryRecentCatalogStore()))
 }

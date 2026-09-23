@@ -131,5 +131,5 @@ struct SampleBuilderView: View {
 }
 
 #Preview {
-    SampleBuilderView(model: SampleBuilderModel())
+    SampleBuilderView(model: SampleBuilderModel(catalogStore: InMemoryRecentCatalogStore()))
 }

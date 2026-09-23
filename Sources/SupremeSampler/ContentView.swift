@@ -124,5 +124,5 @@ extension Notification.Name {
 // view in a live canvas while you edit -- conceptually similar to a
 // Storybook story for a React component, but built into the IDE.
 #Preview {
-    ContentView()
+    ContentView(model: SampleBuilderModel(catalogStore: InMemoryRecentCatalogStore()))
 }
