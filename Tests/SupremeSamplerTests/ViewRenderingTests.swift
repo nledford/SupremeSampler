@@ -172,6 +172,7 @@ final class ViewRenderingTests: XCTestCase {
             .rating(RatingRuleDraft()),
             .category(CategoryRuleDraft()),
             .category(CategoryRuleDraft(mode: .all, selectedGUIDs: ["prop-pines"])),
+            .path(PathRuleDraft()),
             .group(RuleGroupDraft(match: .none, rules: [RuleDraft(.rating(RatingRuleDraft()))])),
         ] {
             _ = RuleRow(rule: .constant(RuleDraft(content)), propTree: nestedTree, depth: 1, onRemove: {}).body
@@ -185,6 +186,12 @@ final class ViewRenderingTests: XCTestCase {
             propTree: nestedTree,
             onRemove: {}
         ).body
+    }
+
+    func test_givenAPathRule_whenBuildingItsRow_thenEachKindRenders() {
+        for kind in PathMatchKind.allCases {
+            _ = PathRuleRow(rule: .constant(PathRuleDraft(kind: kind, text: "/2019/")), onRemove: {}).body
+        }
     }
 
     func test_givenARatingRule_whenBuildingItsRow_thenBodyDoesNotCrash() {

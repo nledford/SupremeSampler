@@ -21,6 +21,7 @@ enum GroupMatch: Equatable, Hashable {
 enum FilterRule: Equatable {
     case rating(RatingFilter)
     case category(CategoryFilter)
+    case path(PathFilter)
     case group(RuleGroup)
 }
 

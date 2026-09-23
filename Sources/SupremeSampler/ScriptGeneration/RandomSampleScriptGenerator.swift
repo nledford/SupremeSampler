@@ -228,6 +228,7 @@ enum RandomSampleScriptGenerator {
         switch rule {
         case .rating(let rating): return [indent + "Rating filter: \(describe(rating))"]
         case .category(let category): return [indent + "Category filter: \(describe(category))"]
+        case .path(let path): return [indent + "Path filter: \(describe(path))"]
         case .group(let group): return groupSummaryLines(group, indent: indent)
         }
     }
@@ -240,6 +241,32 @@ enum RandomSampleScriptGenerator {
         case .none: heading = "Match none of:"
         }
         return [indent + heading] + group.rules.flatMap { summaryLines($0, indent: indent + "  ") }
+    }
+
+    private static func describe(_ path: PathFilter) -> String {
+        let kind: String
+        switch path.kind {
+        case .startsWith: kind = "starts with"
+        case .endsWith: kind = "ends with"
+        case .contains: kind = "contains"
+        }
+        return kind + " \"" + commentSafe(path.text) + "\""
+    }
+
+    /// User text shown inside the `{ ... }` header comment: "}" would end
+    /// the comment early (Pascal comments don't nest or escape), so it
+    /// becomes ")"; "'" becomes "`", keeping the file's quotes balanced
+    /// (Script Studio's comment handling is flaky -- see AGENTS.md -- and
+    /// an apostrophe was among the suspects); anything outside printable
+    /// ASCII becomes "?" to keep the file pure ASCII (see
+    /// `SQLStringLiteral` for why). Descriptive only -- the SQL below
+    /// carries the exact text.
+    private static func commentSafe(_ text: String) -> String {
+        String(String.UnicodeScalarView(text.unicodeScalars.map { scalar in
+            if scalar == "}" { return ")" }
+            if scalar == "'" { return "`" }
+            return (0x20...0x7E).contains(scalar.value) ? scalar : "?"
+        }))
     }
 
     private static func describe(_ rating: RatingFilter) -> String {

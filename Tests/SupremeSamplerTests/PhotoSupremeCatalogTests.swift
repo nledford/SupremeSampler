@@ -38,11 +38,15 @@ final class PhotoSupremeCatalogTests: XCTestCase {
         /// float(22)`, no NOT NULL), though no real rows are NULL today.
         let rating: Int?
         let propGUIDs: [String]
+        /// Full file path: folder (with trailing slash) plus file name,
+        /// stored the way the real catalog splits them.
+        let path: String
 
-        init(guid: String = UUID().uuidString, rating: Int? = 0, propGUIDs: [String] = []) {
+        init(guid: String = UUID().uuidString, rating: Int? = 0, propGUIDs: [String] = [], path: String? = nil) {
             self.guid = guid
             self.rating = rating
             self.propGUIDs = propGUIDs
+            self.path = path ?? "/Volumes/Test/photos/\(guid).jpg"
         }
     }
 
@@ -60,9 +64,14 @@ final class PhotoSupremeCatalogTests: XCTestCase {
                 sql: """
                     CREATE TABLE idCatalogItem (
                         GUID TEXT PRIMARY KEY,
-                        Rating INTEGER
+                        Rating INTEGER,
+                        PathGUID TEXT,
+                        FileName TEXT
                     )
                     """)
+            // The real catalog's absolute folder paths (trailing slash,
+            // volume mount included), keyed by the photo's PathGUID.
+            try db.execute(sql: "CREATE TABLE idCache_FilePath (FilePathGUID TEXT, FilePath TEXT)")
             try db.execute(
                 sql: """
                     CREATE TABLE idCatalogItemDefinition (
@@ -87,9 +96,18 @@ final class PhotoSupremeCatalogTests: XCTestCase {
                     )
                     """)
             for item in items {
+                let fullPath = item.path
+                let slash = fullPath.lastIndex(of: "/")!
+                let folder = String(fullPath[...slash])
+                let fileName = String(fullPath[fullPath.index(after: slash)...])
+                if try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM idCache_FilePath WHERE FilePathGUID = ?", arguments: [folder]) == 0 {
+                    try db.execute(
+                        sql: "INSERT INTO idCache_FilePath (FilePathGUID, FilePath) VALUES (?, ?)",
+                        arguments: [folder, folder])
+                }
                 try db.execute(
-                    sql: "INSERT INTO idCatalogItem (GUID, Rating) VALUES (?, ?)",
-                    arguments: [item.guid, item.rating]
+                    sql: "INSERT INTO idCatalogItem (GUID, Rating, PathGUID, FileName) VALUES (?, ?, ?, ?)",
+                    arguments: [item.guid, item.rating, folder, fileName]
                 )
                 for propGUID in item.propGUIDs {
                     try db.execute(
@@ -424,6 +442,114 @@ final class PhotoSupremeCatalogTests: XCTestCase {
         XCTAssertEqual(anyOfNothing, 0)
         XCTAssertEqual(allOfNothing, 6)
         XCTAssertEqual(noneOfNothing, 6)
+    }
+
+    // MARK: - matchingItemCount: file path
+
+    /// Paths shaped like the real catalog's: an absolute folder on an
+    /// external volume, then the file name.
+    private func makePathFixture() throws {
+        try makeFixture([
+            FixtureItem(guid: "trip", path: "/Volumes/Photos/library/photos/Travel/2019/IMG_1.jpg"),
+            FixtureItem(guid: "trip-png", path: "/Volumes/Photos/library/photos/Travel/2019/scan.png"),
+            FixtureItem(guid: "not-a-year", path: "/Volumes/Photos/library/photos/Travel/2019-extra/IMG_2.jpg"),
+            FixtureItem(guid: "underscore", path: "/Volumes/Photos/library/photos/Portraits/O/LE_Photo_T_4.jpg"),
+            FixtureItem(guid: "no-underscore", path: "/Volumes/Photos/library/photos/Portraits/O/LEXPhoto.jpg"),
+            FixtureItem(guid: "percent", path: "/Volumes/Photos/library/photos/100% crop/a.jpg"),
+            FixtureItem(guid: "curly", path: "/Volumes/Photos/library/photos/Lil’ Black Dress/b.jpg"),
+            FixtureItem(guid: "elsewhere", path: "/Volumes/Other/c.jpg"),
+        ])
+    }
+
+    private func pathCount(_ kind: PathMatchKind, _ text: String) async throws -> Int {
+        try await PhotoSupremeCatalog(path: fixturePath).matchingItemCount(
+            for: SampleFilter(root: RuleGroup(match: .all, rules: [.path(PathFilter(kind: kind, text: text))])))
+    }
+
+    func test_givenAPathContainsRule_whenCountingMatches_thenOnlyPathsWithThatTextMatch() async throws {
+        try makePathFixture()
+
+        let matches = try await pathCount(.contains, "/2019/")
+
+        XCTAssertEqual(matches, 2, "trip and trip-png; /2019-extra/ doesn't contain /2019/")
+    }
+
+    func test_givenAPathStartsWithRule_whenCountingMatches_thenOnlyPathsUnderThatPrefixMatch() async throws {
+        try makePathFixture()
+
+        let matches = try await pathCount(.startsWith, "/Volumes/Photos/library/photos/Portraits/")
+
+        XCTAssertEqual(matches, 2)
+    }
+
+    func test_givenAPathEndsWithRule_whenCountingMatches_thenTheFileNameEndingDecides() async throws {
+        try makePathFixture()
+
+        let matches = try await pathCount(.endsWith, ".png")
+
+        XCTAssertEqual(matches, 1)
+    }
+
+    func test_givenTextThatSpansFolderAndFileName_whenCountingMatches_thenTheFullPathIsSearched() async throws {
+        // The folder and the file name are stored separately; the rule
+        // must see them joined, or this would match nothing.
+        try makePathFixture()
+
+        let matches = try await pathCount(.contains, "2019/IMG_")
+
+        XCTAssertEqual(matches, 1)
+    }
+
+    func test_givenDifferentLetterCase_whenCountingMatches_thenPathMatchingIgnoresCase() async throws {
+        try makePathFixture()
+
+        let matches = try await pathCount(.contains, "/travel/")
+
+        XCTAssertEqual(matches, 3)
+    }
+
+    func test_givenAnUnderscore_whenCountingMatches_thenItMatchesOnlyALiteralUnderscore() async throws {
+        // `_` is a one-character wildcard in SQL LIKE; real file names are
+        // full of underscores, so unescaped it would silently over-match.
+        try makePathFixture()
+
+        let matches = try await pathCount(.contains, "LE_Photo")
+
+        XCTAssertEqual(matches, 1, "not LEXPhoto")
+    }
+
+    func test_givenAPercentSign_whenCountingMatches_thenItMatchesOnlyALiteralPercent() async throws {
+        try makePathFixture()
+
+        let matches = try await pathCount(.contains, "100% crop")
+
+        XCTAssertEqual(matches, 1)
+    }
+
+    func test_givenNonASCIIText_whenCountingMatches_thenItMatchesExactly() async throws {
+        try makePathFixture()
+
+        let matches = try await pathCount(.contains, "Lil’ Black")
+
+        XCTAssertEqual(matches, 1)
+    }
+
+    func test_givenEmptyText_whenCountingMatches_thenEveryPathMatches() async throws {
+        try makePathFixture()
+
+        let matches = try await pathCount(.contains, "")
+
+        XCTAssertEqual(matches, 8)
+    }
+
+    func test_givenANoneOfGroupWithAPathRule_whenCountingMatches_thenThosePathsAreExcluded() async throws {
+        try makePathFixture()
+
+        let matches = try await PhotoSupremeCatalog(path: fixturePath).matchingItemCount(
+            for: SampleFilter(
+                root: RuleGroup(match: .none, rules: [.path(PathFilter(kind: .contains, text: "/Travel/"))])))
+
+        XCTAssertEqual(matches, 5)
     }
 
     // MARK: - matchingItemCount: combined rating + category

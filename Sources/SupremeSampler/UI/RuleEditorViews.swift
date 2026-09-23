@@ -50,6 +50,7 @@ struct RuleGroupEditor: View {
             Menu {
                 Button("Rating rule") { group.add(.rating) }
                 Button("Category rule") { group.add(.category) }
+                Button("File path rule") { group.add(.path) }
                 Divider()
                 Button("Nested group") { group.add(.group) }
             } label: {
@@ -150,6 +151,18 @@ struct RuleRow: View {
                 onRemove: onRemove
             )
             .padding(.leading, CGFloat(depth) * indentPerLevel)
+        case .path(let path):
+            PathRuleRow(
+                rule: Binding(
+                    get: {
+                        if case .path(let current) = rule.content { return current }
+                        return path
+                    },
+                    set: { rule.content = .path($0) }
+                ),
+                onRemove: onRemove
+            )
+            .padding(.leading, CGFloat(depth) * indentPerLevel)
         case .group(let group):
             RuleGroupEditor(
                 group: Binding(
@@ -227,6 +240,53 @@ struct CategoryRuleRow: View {
                     .foregroundStyle(.secondary)
                     .font(.caption)
             }
+        }
+    }
+}
+
+/// "Path [starts with / ends with / contains] [text]", matched against
+/// the photo's full path (folder plus file name).
+struct PathRuleRow: View {
+    @Binding var rule: PathRuleDraft
+    let onRemove: () -> Void
+
+    /// What's in the text field right now, applied to `rule` only after
+    /// typing pauses: every change re-runs the live count, and a path
+    /// count scans every photo (~2s on the real catalog), so updating per
+    /// keystroke would stack up queries. `@State` is view-owned storage
+    /// that survives re-renders -- like `useState` in React.
+    @State private var typedText: String
+
+    init(rule: Binding<PathRuleDraft>, onRemove: @escaping () -> Void) {
+        _rule = rule
+        self.onRemove = onRemove
+        _typedText = State(initialValue: rule.wrappedValue.text)
+    }
+
+    var body: some View {
+        HStack {
+            Text("Path")
+            Picker("Match", selection: $rule.kind) {
+                Text("contains").tag(PathMatchKind.contains)
+                Text("starts with").tag(PathMatchKind.startsWith)
+                Text("ends with").tag(PathMatchKind.endsWith)
+            }
+            .labelsHidden()
+            .fixedSize()
+            TextField("Path text", text: $typedText, prompt: Text("/travel/"))
+                .labelsHidden()
+                .textFieldStyle(.roundedBorder)
+                .help("Matched against the full path, folder and file name. Case doesn't matter for A–Z.")
+                // `.task(id:)` restarts whenever `typedText` changes and
+                // cancels the previous run -- so the sleep below is a
+                // debounce, like clearing and resetting a `setTimeout`.
+                .task(id: typedText) {
+                    guard typedText != rule.text else { return }
+                    try? await Task.sleep(for: .milliseconds(400))
+                    guard !Task.isCancelled else { return }
+                    rule.text = typedText
+                }
+            RemoveRuleButton(accessibilityLabel: "Remove path rule", action: onRemove)
         }
     }
 }

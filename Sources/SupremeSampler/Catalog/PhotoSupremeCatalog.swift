@@ -279,6 +279,7 @@ struct PhotoSupremeCatalog: Sendable {
         switch rule {
         case .rating(let rating): return ratingPredicate(rating)
         case .category(let category): return categoryPredicate(category)
+        case .path(let path): return pathPredicate(path)
         case .group(let group): return groupPredicate(group)
         }
     }
@@ -300,6 +301,24 @@ struct PhotoSupremeCatalog: Sendable {
         case .any: return "(\(predicates.joined(separator: " OR ")))"
         case .none: return "NOT COALESCE((\(predicates.joined(separator: " OR "))), 0)"
         }
+    }
+
+    /// The photo's full path is its folder (`idCache_FilePath.FilePath`,
+    /// absolute with a trailing slash) joined to its `FileName`, the same
+    /// expression the earlier lusia tool's views used. Correlated per
+    /// photo -- about 2s over the real catalog's millions of photos (measured
+    /// 2026-09-23). Matching only the folder would be ~100x faster via an
+    /// uncorrelated subquery, but would miss text that spans the folder
+    /// and file name ("2019/IMG_"). `ESCAPE '\'` makes `%` and `_` in
+    /// the user's text literal (see `PathFilter.likePattern`).
+    private static func pathPredicate(_ path: PathFilter) -> SQL {
+        """
+        EXISTS (
+            SELECT 1 FROM idCache_FilePath fp
+            WHERE fp.FilePathGUID = idCatalogItem.PathGUID
+              AND (fp.FilePath || idCatalogItem.FileName) LIKE \(path.likePattern) ESCAPE '\\'
+        )
+        """
     }
 
     private static func ratingPredicate(_ rating: RatingFilter) -> SQL {

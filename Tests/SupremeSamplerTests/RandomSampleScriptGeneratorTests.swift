@@ -235,6 +235,27 @@ final class RandomSampleScriptGeneratorTests: XCTestCase {
                 """))
     }
 
+    // MARK: - Text values in the script
+
+    func test_givenNonASCIIOrBraceText_whenGenerating_thenTheWholeScriptIsPureASCII() {
+        // SQL uses char(...) for non-ASCII (see SQLStringLiteral); the
+        // header comment replaces what it can't show. A "}" in user text
+        // would end the `{ ... }` header comment early, so it's replaced.
+        let filter = SampleFilter(
+            root: RuleGroup(
+                match: .all,
+                rules: [
+                    .path(PathFilter(kind: .contains, text: "Lil’ } Black")),
+                    .path(PathFilter(kind: .startsWith, text: "/選択/")),
+                ]))
+        let script = RandomSampleScriptGenerator.generate(sampleSize: 100, filter: filter, generatedAt: fixedDate)
+
+        XCTAssertTrue(script.allSatisfy(\.isASCII))
+        let header = script.prefix(while: { $0 != "}" })
+        XCTAssertTrue(header.contains("Path filter: contains \"Lil? ) Black\""), String(header))
+        XCTAssertTrue(header.contains("Path filter: starts with \"/??/\""), String(header))
+    }
+
     // MARK: - Header
 
     func test_givenFilter_whenGenerating_thenHeaderSummarizesIt() {
@@ -300,6 +321,7 @@ final class RandomSampleScriptGeneratorTests: XCTestCase {
             SampleFilter(rating: .exactly(5)),
             SampleFilter(category: CategoryFilter(propGUIDs: ["A", "B", "C"], mode: .all)),
             SampleFilter(rating: .atMost(2), category: CategoryFilter(propGUIDs: ["A"], mode: .none)),
+            SampleFilter(root: RuleGroup(match: .any, rules: [.path(PathFilter(kind: .contains, text: "O'B_%’"))])),
             SampleFilter(
                 root: RuleGroup(
                     match: .none,
@@ -332,6 +354,7 @@ final class RandomSampleScriptGeneratorTests: XCTestCase {
             SampleFilter(rating: .exactly(5)),
             SampleFilter(category: CategoryFilter(propGUIDs: ["A", "B", "C"], mode: .all)),
             SampleFilter(rating: .atMost(2), category: CategoryFilter(propGUIDs: ["A"], mode: .none)),
+            SampleFilter(root: RuleGroup(match: .any, rules: [.path(PathFilter(kind: .contains, text: "O'B_%’"))])),
             SampleFilter(
                 root: RuleGroup(
                     match: .none,

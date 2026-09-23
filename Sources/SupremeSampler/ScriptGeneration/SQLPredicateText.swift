@@ -45,6 +45,7 @@ enum SQLPredicateText {
         switch rule {
         case .rating(let rating): return ratingClause(rating)
         case .category(let category): return categoryClause(category)
+        case .path(let path): return pathClause(path)
         case .group(let group): return groupClause(group, isRoot: false)
         }
     }
@@ -71,6 +72,13 @@ enum SQLPredicateText {
             // silently excluding the photo from both sides.
             return "NOT COALESCE((" + clauses.joined(separator: " OR ") + "), 0)"
         }
+    }
+
+    /// Same shape as `PhotoSupremeCatalog.pathPredicate`.
+    private static func pathClause(_ path: PathFilter) -> String {
+        "EXISTS (SELECT 1 FROM idCache_FilePath fp WHERE fp.FilePathGUID = idCatalogItem.PathGUID"
+            + " AND (fp.FilePath || idCatalogItem.FileName) LIKE \(SQLStringLiteral.render(path.likePattern))"
+            + " ESCAPE '\\')"
     }
 
     private static func ratingClause(_ rating: RatingFilter) -> String {

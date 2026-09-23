@@ -77,6 +77,14 @@ final class RuleGroupDraftTests: XCTestCase {
         XCTAssertEqual(Set(draft.rules.map(\.id)).count, 3)
     }
 
+    func test_givenAnEmptyGroup_whenAddingAPathRule_thenItStartsAsContainsNothingWhichMatchesEverything() {
+        var draft = RuleGroupDraft()
+
+        draft.add(.path)
+
+        XCTAssertEqual(filter(draft).root.rules, [.path(PathFilter(kind: .contains, text: ""))])
+    }
+
     // MARK: - Editing rules
 
     func test_givenARatingRule_whenChangingItsComparisonAndValue_thenTheFilterFollows() {
@@ -105,6 +113,15 @@ final class RuleGroupDraftTests: XCTestCase {
         draft.match = .none
 
         XCTAssertEqual(filter(draft).root, RuleGroup(match: .none, rules: [.rating(.atLeast(3))]))
+    }
+
+    func test_givenAPathRule_whenChangingItsKindAndText_thenTheFilterFollows() {
+        var draft = RuleGroupDraft()
+        draft.add(.path)
+
+        draft.rules[0].content = .path(PathRuleDraft(kind: .startsWith, text: "/Volumes/Photos/"))
+
+        XCTAssertEqual(filter(draft).root.rules, [.path(PathFilter(kind: .startsWith, text: "/Volumes/Photos/"))])
     }
 
     // MARK: - Nesting

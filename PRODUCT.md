@@ -87,6 +87,9 @@ locally; it is not published by IDimager.
   hierarchical multi-select tree (cmd/shift-click, native macOS `List`).
   Selecting a category or keyword includes all of its subcategories.
 - Sample size: 1…1,000,000, step 100, default 10,000.
+- File path: contains / starts with / ends with some text, against the full
+  path (volume folder plus file name), ignoring A–Z case. `%`, `_` and `\`
+  are literal.
 - Rules combine in groups — Match all / any / none of — and a group can
   contain nested groups, Lightroom Smart Collection style. A "none of"
   group excludes photos. The builder starts empty (whole catalog).

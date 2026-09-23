@@ -181,6 +181,24 @@ a deliberate choice by the repo owner ("I do not use the built-in
 categories prepended with `{`"), not an oversight; don't "fix" this to
 include them without asking first.
 
+## Rule kinds beyond rating and category
+
+Chosen from what the real catalog actually populates (surveyed
+2026-09-23), not from the schema alone — `idMarked` is NULL on every row,
+for instance, so it isn't offered.
+
+- **File path** (`PathFilter`): the full path is
+  `idCache_FilePath.FilePath || idCatalogItem.FileName`, the same
+  expression the earlier lusia tool's views used (those views no longer
+  exist in the catalog, and this app never creates views — it's
+  read-only, and a script depending on them would break without them).
+  Matched with `LIKE ... ESCAPE '\'` after escaping `%`, `_`, `\`
+  (`PathFilter.likePattern`) — real file names are full of `_`, which
+  is a LIKE wildcard. Correlated per photo, ~2s on the real catalog;
+  matching the folder alone is ~100x faster but misses text spanning
+  folder and file name. The row debounces typing (0.4s) so each
+  keystroke doesn't start a 2s count.
+
 ## Switching catalogs (File > Open Catalog…)
 
 Cmd+O / File menu > "Open Catalog…" (`SupremeSamplerApp.commands`) lets

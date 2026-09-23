@@ -119,6 +119,29 @@ final class SQLPredicateTextTests: XCTestCase {
         XCTAssertEqual(SQLPredicateText.render(SampleFilter(root: RuleGroup(match: .any, rules: []))), "0 = 1")
     }
 
+    // MARK: - File path
+
+    func test_givenAPathContainsRule_whenRendering_thenMatchesTheJoinedFolderAndFileName() {
+        let filter = SampleFilter(root: RuleGroup(match: .all, rules: [.path(PathFilter(kind: .contains, text: "/2019/"))]))
+        XCTAssertEqual(
+            SQLPredicateText.render(filter),
+            "EXISTS (SELECT 1 FROM idCache_FilePath fp WHERE fp.FilePathGUID = idCatalogItem.PathGUID"
+                + " AND (fp.FilePath || idCatalogItem.FileName) LIKE '%/2019/%' ESCAPE '\\')"
+        )
+    }
+
+    func test_givenPathTextWithWildcardCharacters_whenRendering_thenTheyAreEscaped() {
+        let filter = SampleFilter(root: RuleGroup(match: .all, rules: [.path(PathFilter(kind: .startsWith, text: "a_b%c\\d"))]))
+        XCTAssertTrue(SQLPredicateText.render(filter)!.contains("LIKE 'a\\_b\\%c\\\\d%' ESCAPE '\\'"))
+    }
+
+    func test_givenNonASCIIPathText_whenRendering_thenTheSQLIsPureASCII() {
+        let filter = SampleFilter(root: RuleGroup(match: .all, rules: [.path(PathFilter(kind: .endsWith, text: "Lil’"))]))
+        let sql = SQLPredicateText.render(filter)!
+        XCTAssertTrue(sql.allSatisfy(\.isASCII))
+        XCTAssertTrue(sql.contains("LIKE '%Lil' || char(8217) ESCAPE"))
+    }
+
     // MARK: - Combined, and SQL-string-literal escaping of GUID values
 
     func test_givenRatingAndCategory_whenRendering_thenJoinsWithAND() {

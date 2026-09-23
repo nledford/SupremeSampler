@@ -33,11 +33,19 @@ struct CategoryRuleDraft: Equatable {
     var selectedGUIDs: Set<String> = []
 }
 
-/// One row in a group: a rating rule, a category rule, or a nested group.
+/// A file-path rule as the controls see it: "Path [starts with / ends
+/// with / contains] [text]".
+struct PathRuleDraft: Equatable {
+    var kind: PathMatchKind = .contains
+    var text: String = ""
+}
+
+/// One row in a group: a rating, category, or path rule, or a nested group.
 struct RuleDraft: Identifiable, Equatable {
     enum Content: Equatable {
         case rating(RatingRuleDraft)
         case category(CategoryRuleDraft)
+        case path(PathRuleDraft)
         case group(RuleGroupDraft)
     }
 
@@ -56,6 +64,7 @@ struct RuleDraft: Identifiable, Equatable {
 enum NewRuleKind {
     case rating
     case category
+    case path
     case group
 }
 
@@ -79,6 +88,7 @@ struct RuleGroupDraft: Identifiable, Equatable {
         switch kind {
         case .rating: rules.append(RuleDraft(.rating(RatingRuleDraft())))
         case .category: rules.append(RuleDraft(.category(CategoryRuleDraft())))
+        case .path: rules.append(RuleDraft(.path(PathRuleDraft())))
         case .group: rules.append(RuleDraft(.group(RuleGroupDraft())))
         }
     }
@@ -105,6 +115,8 @@ struct RuleGroupDraft: Identifiable, Equatable {
                             branches: CategoryBranch.resolve(selectedGUIDs: category.selectedGUIDs, in: tree),
                             mode: category.mode
                         ))
+                case .path(let path):
+                    return .path(PathFilter(kind: path.kind, text: path.text))
                 case .group(let group):
                     return .group(group.domainGroup(resolvingCategoriesIn: tree))
                 }

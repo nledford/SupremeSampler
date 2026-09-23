@@ -38,6 +38,10 @@ final class PredicateConsistencyTests: XCTestCase {
         let guid: String
         let rating: Int?
         let propGUIDs: [String]
+        var path: String? = nil
+
+        /// Full file path: folder (with trailing slash) plus file name.
+        var fullPath: String { path ?? "/Volumes/Test/photos/\(guid).jpg" }
     }
 
     private func makeFixture(_ items: [FixtureItem]) throws {
@@ -48,9 +52,14 @@ final class PredicateConsistencyTests: XCTestCase {
                 sql: """
                     CREATE TABLE idCatalogItem (
                         GUID TEXT PRIMARY KEY,
-                        Rating INTEGER
+                        Rating INTEGER,
+                        PathGUID TEXT,
+                        FileName TEXT
                     )
                     """)
+            // The real catalog's absolute folder paths (trailing slash,
+            // volume mount included), keyed by the photo's PathGUID.
+            try db.execute(sql: "CREATE TABLE idCache_FilePath (FilePathGUID TEXT, FilePath TEXT)")
             try db.execute(
                 sql: """
                     CREATE TABLE idCatalogItemDefinition (
@@ -65,9 +74,18 @@ final class PredicateConsistencyTests: XCTestCase {
             try db.execute(
                 sql: "INSERT INTO idCatalogItemDefinition (GUID, CatalogItemGUID) VALUES ('catA', NULL)")
             for item in items {
+                let fullPath = item.fullPath
+                let slash = fullPath.lastIndex(of: "/")!
+                let folder = String(fullPath[...slash])
+                let fileName = String(fullPath[fullPath.index(after: slash)...])
+                if try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM idCache_FilePath WHERE FilePathGUID = ?", arguments: [folder]) == 0 {
+                    try db.execute(
+                        sql: "INSERT INTO idCache_FilePath (FilePathGUID, FilePath) VALUES (?, ?)",
+                        arguments: [folder, folder])
+                }
                 try db.execute(
-                    sql: "INSERT INTO idCatalogItem (GUID, Rating) VALUES (?, ?)",
-                    arguments: [item.guid, item.rating]
+                    sql: "INSERT INTO idCatalogItem (GUID, Rating, PathGUID, FileName) VALUES (?, ?, ?, ?)",
+                    arguments: [item.guid, item.rating, folder, fileName]
                 )
                 for propGUID in item.propGUIDs {
                     try db.execute(
@@ -161,7 +179,7 @@ final class PredicateConsistencyTests: XCTestCase {
     }
 
     private func randomRule(depth: Int, using rng: inout SeededGenerator) -> FilterRule {
-        switch Int.random(in: 0..<(depth > 0 ? 3 : 2), using: &rng) {
+        switch Int.random(in: 0..<(depth > 0 ? 4 : 3), using: &rng) {
         case 0:
             let value = Int.random(in: 0...5, using: &rng)
             return .rating([RatingFilter.exactly(value), .atLeast(value), .atMost(value)].randomElement(using: &rng)!)
@@ -173,6 +191,10 @@ final class PredicateConsistencyTests: XCTestCase {
             }
             let mode = [CategoryMatchMode.any, .all, .none].randomElement(using: &rng)!
             return .category(CategoryFilter(branches: branches, mode: mode))
+        case 2:
+            let texts = ["", "/2019/", "/travel/", "2019/IMG_", "LE_O", "100%", "Lil’", ".PNG", "/Volumes/Test/", "x\\y"]
+            let kind = [PathMatchKind.startsWith, .endsWith, .contains].randomElement(using: &rng)!
+            return .path(PathFilter(kind: kind, text: texts.randomElement(using: &rng)!))
         default:
             return .group(randomGroup(depth: depth - 1, using: &rng))
         }
@@ -204,9 +226,24 @@ final class PredicateConsistencyTests: XCTestCase {
             case .all: return category.branches.allSatisfy(touches)
             case .none: return !category.branches.contains(where: touches)
             }
+        case .path(let path):
+            // SQLite's LIKE folds case for A-Z only; so does this.
+            let fullPath = asciiLowercased(item.fullPath)
+            let text = asciiLowercased(path.text)
+            switch path.kind {
+            case .startsWith: return fullPath.hasPrefix(text)
+            case .endsWith: return fullPath.hasSuffix(text)
+            case .contains: return text.isEmpty || fullPath.contains(text)
+            }
         case .group(let group):
             return oracleMatches(group, item)
         }
+    }
+
+    private func asciiLowercased(_ text: String) -> String {
+        String(String.UnicodeScalarView(text.unicodeScalars.map { scalar in
+            (65...90).contains(scalar.value) ? Unicode.Scalar(scalar.value + 32)! : scalar
+        }))
     }
 
     private func oracleMatches(_ group: RuleGroup, _ item: FixtureItem) -> Bool {
@@ -227,6 +264,13 @@ final class PredicateConsistencyTests: XCTestCase {
             FixtureItem(guid: "abc-r5", rating: 5, propGUIDs: ["catA", "catB", "catC"]),
             FixtureItem(guid: "a1-b1-r4", rating: 4, propGUIDs: ["catA-child", "catB-child"]),
             FixtureItem(guid: "c-r1", rating: 1, propGUIDs: ["catC"]),
+            FixtureItem(guid: "trip", rating: 3, propGUIDs: [], path: "/Volumes/Photos/Travel/2019/IMG_1.jpg"),
+            FixtureItem(guid: "trip-png", rating: nil, propGUIDs: ["catA"], path: "/Volumes/Photos/travel/2019/scan.PNG"),
+            FixtureItem(guid: "under", rating: 5, propGUIDs: [], path: "/Volumes/Photos/E/LE_Photo.jpg"),
+            FixtureItem(guid: "no-under", rating: 2, propGUIDs: [], path: "/Volumes/Photos/E/LEXPhoto.jpg"),
+            FixtureItem(guid: "pct", rating: 0, propGUIDs: ["catB"], path: "/Volumes/Photos/100% crop/a.jpg"),
+            FixtureItem(guid: "curly", rating: 4, propGUIDs: [], path: "/Volumes/Photos/Lil’ Dress/b.jpg"),
+            FixtureItem(guid: "backslash", rating: 1, propGUIDs: [], path: "/Volumes/Photos/x\\y/c.jpg"),
         ]
         try makeFixture(items)
         let catalog = try PhotoSupremeCatalog(path: fixturePath)
