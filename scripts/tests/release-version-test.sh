@@ -69,7 +69,7 @@ assert_stderr_contains 'v0.2.0' test_givenTagDiffersFromMarketingVersion_whenChe
 assert_stderr_contains '0.1.0' test_givenTagDiffersFromMarketingVersion_whenChecking_thenFailsWithBothValues
 
 # --- Scenario 3: non-semver tags are rejected ------------------------------
-for bad in 0.1.0 v0.1 release-1; do
+for bad in 0.1.0 v0.1 release-1 v0.1.0- v0.1.0-rc..1 v0.1.0-rc. v01.1.1 v0.1.0+build; do
     run_check 'settings:
   base:
     MARKETING_VERSION: "0.1.0"' "$bad"
