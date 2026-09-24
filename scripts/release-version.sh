@@ -25,7 +25,9 @@ usage() {
 [ "$1" = "check" ] || usage
 tag="$2"
 
-if ! printf '%s' "$tag" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$'; then
+# Core components have no leading zeros (semver); a prerelease is one or more
+# dot-separated alphanumeric identifiers, none empty.
+if ! printf '%s' "$tag" | grep -Eq '^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z]+(\.[0-9A-Za-z]+)*)?$'; then
     echo "not a release tag: $tag" >&2
     exit 2
 fi
