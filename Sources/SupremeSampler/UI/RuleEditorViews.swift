@@ -53,14 +53,14 @@ struct RuleGroupEditor: View {
             // actions); each `Button` inside it is one menu item.
             Menu {
                 Button("Rating rule") { group.add(.rating) }
-                Button("Category rule") { group.add(.category) }
+                Button("Keyword rule") { group.add(.keyword) }
                 Button("File path rule") { group.add(.path) }
                 Button("Color label rule") { group.add(.label) }
                 Button("File type rule") { group.add(.fileType) }
                 Button("Bookmark rule") { group.add(.bookmark) }
                 Button("Pending deletion rule") { group.add(.pendingDeletion) }
                 Divider()
-                Button("Nested group") { group.add(.group) }
+                Button("Nested group") { group.addGroup() }
             } label: {
                 Image(systemName: "plus.circle")
             }
@@ -152,14 +152,14 @@ struct RuleRow: View {
                 onRemove: onRemove
             )
             .padding(.leading, CGFloat(depth) * indentPerLevel)
-        case .category(let category):
-            CategoryRuleRow(
+        case .keyword(let keyword):
+            KeywordRuleRow(
                 rule: Binding(
                     get: {
-                        if case .category(let current) = rule.content { return current }
-                        return category
+                        if case .keyword(let current) = rule.content { return current }
+                        return keyword
                     },
-                    set: { rule.content = .category($0) }
+                    set: { rule.content = .keyword($0) }
                 ),
                 propTree: propTree,
                 onRemove: onRemove
@@ -270,43 +270,50 @@ struct RatingRuleRow: View {
     }
 }
 
-/// "Category [any of / all of / none of]" plus the category tree to pick
-/// from. Picking a node includes its subcategories (see `CategoryBranch`).
-struct CategoryRuleRow: View {
-    @Binding var rule: CategoryRuleDraft
+/// "Keyword [operator]" plus, for the picked-keyword operators, the
+/// category tree to pick from (a node includes its subcategories, see
+/// `CategoryBranch`), or, for the path operators, the text to match.
+struct KeywordRuleRow: View {
+    @Binding var rule: KeywordRuleDraft
     let propTree: [CatalogPropNode]
     let onRemove: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Text("Category")
-                Picker("Match", selection: $rule.mode) {
-                    Text("Any of").tag(CategoryMatchMode.any)
-                    Text("All of").tag(CategoryMatchMode.all)
-                    Text("None of").tag(CategoryMatchMode.none)
+                Text("Keyword")
+                Picker("Match", selection: $rule.operator) {
+                    ForEach(KeywordOperator.allCases) { keywordOperator in
+                        Text(keywordOperator.rawValue).tag(keywordOperator)
+                    }
                 }
-                .pickerStyle(.segmented)
                 .labelsHidden()
                 .fixedSize()
+                if !rule.operator.picksKeywords {
+                    TextField("Keyword path text", text: $rule.text, prompt: Text("Nature\\Trees"))
+                        .labelsHidden()
+                        .textFieldStyle(.roundedBorder)
+                }
                 Spacer()
-                RemoveRuleButton(accessibilityLabel: "Remove category rule", action: onRemove)
+                RemoveRuleButton(accessibilityLabel: "Remove keyword rule", action: onRemove)
             }
 
-            if propTree.isEmpty {
-                Text("No categories in this catalog.")
-                    .foregroundStyle(.secondary)
-            } else {
-                // `children: \.childrenOrNil` makes this a real outline
-                // view (disclosure triangles); `selection:` gives native
-                // cmd/shift-click multi-select on macOS.
-                List(propTree, children: \.childrenOrNil, selection: $rule.selectedGUIDs) { node in
-                    Text(node.name)
+            if rule.operator.picksKeywords {
+                if propTree.isEmpty {
+                    Text("No categories in this catalog.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    // `children: \.childrenOrNil` makes this a real outline
+                    // view (disclosure triangles); `selection:` gives native
+                    // cmd/shift-click multi-select on macOS.
+                    List(propTree, children: \.childrenOrNil, selection: $rule.selectedGUIDs) { node in
+                        Text(node.name)
+                    }
+                    .frame(height: 180)
+                    Text("\(rule.selectedGUIDs.count) selected, including their subcategories")
+                        .foregroundStyle(.secondary)
+                        .font(.caption)
                 }
-                .frame(height: 180)
-                Text("\(rule.selectedGUIDs.count) selected, including their subcategories")
-                    .foregroundStyle(.secondary)
-                    .font(.caption)
             }
         }
     }

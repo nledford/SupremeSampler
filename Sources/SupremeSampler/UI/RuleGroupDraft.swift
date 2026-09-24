@@ -27,11 +27,64 @@ struct RatingRuleDraft: Equatable {
     }
 }
 
-/// A category rule as the controls see it: a match mode and whatever
-/// nodes are selected in the tree (not yet expanded to subcategories).
-struct CategoryRuleDraft: Equatable {
-    var mode: CategoryMatchMode = .any
+/// The keyword rule's operator picker. Two families share one picker,
+/// as Lightroom's "Keywords" field does: the first three test keywords
+/// picked from the tree (each with its whole branch); the rest test the
+/// text of keyword paths (`KeywordPathFilter`). Flat, one plain value per
+/// choice, for the same reason as `PathOperator`.
+enum KeywordOperator: String, CaseIterable, Identifiable, Hashable {
+    case isAnyOf = "is any of"
+    case isAllOf = "is all of"
+    case isNoneOf = "is none of"
+    case contains = "contains"
+    case doesNotContain = "does not contain"
+    case hasPart = "has a part named"
+    case hasNoPart = "has no part named"
+    case startsWith = "starts with"
+    case doesNotStartWith = "does not start with"
+    case endsWith = "ends with"
+    case doesNotEndWith = "does not end with"
+
+    var id: String { rawValue }
+
+    /// `true` for the operators that test keywords picked from the tree,
+    /// `false` for the ones that test path text.
+    var picksKeywords: Bool {
+        switch self {
+        case .isAnyOf, .isAllOf, .isNoneOf: return true
+        default: return false
+        }
+    }
+}
+
+/// A keyword rule as the controls see it: an operator plus both kinds of
+/// value -- the tree's raw selection (not yet expanded to branches) and
+/// path text. Only the one the operator uses counts; the other is kept so
+/// switching operators back and forth doesn't lose what was entered.
+struct KeywordRuleDraft: Equatable {
+    var `operator`: KeywordOperator = .isAnyOf
     var selectedGUIDs: Set<String> = []
+    var text: String = ""
+
+    func domainRule(resolvingCategoriesIn tree: [CatalogPropNode]) -> FilterRule {
+        let branches = { CategoryBranch.resolve(selectedGUIDs: selectedGUIDs, in: tree) }
+        func path(_ kind: KeywordPathMatchKind, negated: Bool = false) -> FilterRule {
+            .keywordPath(KeywordPathFilter(kind: kind, text: text, negated: negated))
+        }
+        switch `operator` {
+        case .isAnyOf: return .category(CategoryFilter(branches: branches(), mode: .any))
+        case .isAllOf: return .category(CategoryFilter(branches: branches(), mode: .all))
+        case .isNoneOf: return .category(CategoryFilter(branches: branches(), mode: .none))
+        case .contains: return path(.contains)
+        case .doesNotContain: return path(.contains, negated: true)
+        case .hasPart: return path(.hasPart)
+        case .hasNoPart: return path(.hasPart, negated: true)
+        case .startsWith: return path(.startsWith)
+        case .doesNotStartWith: return path(.startsWith, negated: true)
+        case .endsWith: return path(.endsWith)
+        case .doesNotEndWith: return path(.endsWith, negated: true)
+        }
+    }
 }
 
 /// The path rule's operator picker: each match kind, plain or negated,
@@ -96,12 +149,11 @@ struct FileTypeRuleDraft: Equatable {
     var selectedTypes: Set<String> = []
 }
 
-/// One row in a group: a rating, category, path, label, or file-type
-/// rule, or a nested group.
+/// One row in a group: a rule (see `RuleField`) or a nested group.
 struct RuleDraft: Identifiable, Equatable {
     enum Content: Equatable {
         case rating(RatingRuleDraft)
-        case category(CategoryRuleDraft)
+        case keyword(KeywordRuleDraft)
         case path(PathRuleDraft)
         case label(LabelRuleDraft)
         case fileType(FileTypeRuleDraft)
@@ -121,16 +173,47 @@ struct RuleDraft: Identifiable, Equatable {
     }
 }
 
-/// What the "Add" menu can create.
-enum NewRuleKind {
-    case rating
-    case category
-    case path
-    case label
-    case fileType
-    case bookmark
-    case pendingDeletion
-    case group
+/// The first picker in a rule row -- what the rule tests, Lightroom's
+/// "field". Changing it swaps the rule for that field's default.
+enum RuleField: String, CaseIterable, Identifiable, Hashable {
+    case rating = "Rating"
+    case keyword = "Keyword"
+    case path = "File path"
+    case label = "Color label"
+    case fileType = "File type"
+    case bookmark = "Bookmark"
+    case pendingDeletion = "Pending deletion"
+
+    var id: String { rawValue }
+
+    /// A new rule of this field, with default settings.
+    var defaultContent: RuleDraft.Content {
+        switch self {
+        case .rating: return .rating(RatingRuleDraft())
+        case .keyword: return .keyword(KeywordRuleDraft())
+        case .path: return .path(PathRuleDraft())
+        case .label: return .label(LabelRuleDraft())
+        case .fileType: return .fileType(FileTypeRuleDraft())
+        case .bookmark: return .bookmark(BookmarkRuleDraft())
+        case .pendingDeletion: return .pendingDeletion(PendingDeletionRuleDraft())
+        }
+    }
+}
+
+extension RuleDraft {
+    /// The row's field, or `nil` for a nested group.
+    var field: RuleField? {
+        switch content {
+        case .rating: return .rating
+        case .keyword: return .keyword
+        case .path: return .path
+        case .label: return .label
+        case .fileType: return .fileType
+        case .bookmark: return .bookmark
+        case .pendingDeletion: return .pendingDeletion
+        case .group: return nil
+        }
+    }
 }
 
 /// A group of rules being edited: "Match [all/any/none] of:" followed by
@@ -146,20 +229,42 @@ struct RuleGroupDraft: Identifiable, Equatable {
         self.rules = rules
     }
 
-    /// Appends a new rule with default settings. `mutating` marks a
-    /// method that changes a value type in place -- the Swift spelling
-    /// of Rust's `&mut self`.
-    mutating func add(_ kind: NewRuleKind) {
-        switch kind {
-        case .rating: rules.append(RuleDraft(.rating(RatingRuleDraft())))
-        case .category: rules.append(RuleDraft(.category(CategoryRuleDraft())))
-        case .path: rules.append(RuleDraft(.path(PathRuleDraft())))
-        case .label: rules.append(RuleDraft(.label(LabelRuleDraft())))
-        case .fileType: rules.append(RuleDraft(.fileType(FileTypeRuleDraft())))
-        case .bookmark: rules.append(RuleDraft(.bookmark(BookmarkRuleDraft())))
-        case .pendingDeletion: rules.append(RuleDraft(.pendingDeletion(PendingDeletionRuleDraft())))
-        case .group: rules.append(RuleDraft(.group(RuleGroupDraft())))
-        }
+    /// Appends a new rule of `field`, with default settings -- the group
+    /// header's "+". `mutating` marks a method that changes a value type
+    /// in place -- the Swift spelling of Rust's `&mut self`.
+    mutating func add(_ field: RuleField) {
+        rules.append(RuleDraft(field.defaultContent))
+    }
+
+    /// Appends an empty "all of" group.
+    mutating func addGroup() {
+        rules.append(RuleDraft(.group(RuleGroupDraft())))
+    }
+
+    /// Inserts a new rule of `field` right after this group's rule `id` --
+    /// a row's "+". A no-op if `id` isn't one of this group's rules.
+    mutating func insertRule(_ field: RuleField, after id: RuleDraft.ID) {
+        insert(RuleDraft(field.defaultContent), after: id)
+    }
+
+    /// Inserts an empty "all of" group right after this group's rule `id`.
+    mutating func insertGroup(after id: RuleDraft.ID) {
+        insert(RuleDraft(.group(RuleGroupDraft())), after: id)
+    }
+
+    /// Swaps this group's rule `id` for `field`'s default, keeping the
+    /// row's place and identity. Keeps its settings if it's already that
+    /// field; a no-op for a nested group or an unknown `id`.
+    mutating func changeField(ofRule id: RuleDraft.ID, to field: RuleField) {
+        guard let index = rules.firstIndex(where: { $0.id == id }),
+            let current = rules[index].field, current != field
+        else { return }
+        rules[index].content = field.defaultContent
+    }
+
+    private mutating func insert(_ rule: RuleDraft, after id: RuleDraft.ID) {
+        guard let index = rules.firstIndex(where: { $0.id == id }) else { return }
+        rules.insert(rule, at: index + 1)
     }
 
     /// Removes this group's own rule with `id`; a no-op if it isn't here.
@@ -178,12 +283,8 @@ struct RuleGroupDraft: Identifiable, Equatable {
                 switch rule.content {
                 case .rating(let rating):
                     return .rating(rating.domainFilter)
-                case .category(let category):
-                    return .category(
-                        CategoryFilter(
-                            branches: CategoryBranch.resolve(selectedGUIDs: category.selectedGUIDs, in: tree),
-                            mode: category.mode
-                        ))
+                case .keyword(let keyword):
+                    return keyword.domainRule(resolvingCategoriesIn: tree)
                 case .path(let path):
                     return .path(PathFilter(kind: path.operator.kind, text: path.text, negated: path.operator.isNegated))
                 case .label(let label):

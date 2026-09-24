@@ -143,7 +143,7 @@ final class ScriptSavingTests: XCTestCase {
         let model = await modelReadyToSave()
         await model.saveScript(using: FakeDestinationChooser(answer: folder.appendingPathComponent("A.psc")), startingIn: nil)
 
-        model.rules.add(.category)
+        model.rules.add(.keyword)
 
         XCTAssertNil(model.lastSavedScriptURL)
     }

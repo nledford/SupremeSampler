@@ -136,8 +136,8 @@ final class ViewRenderingTests: XCTestCase {
     func test_givenRules_whenBuildingSampleBuilderView_thenBodyDoesNotCrash() {
         let model = SampleBuilderModel.forTesting()
         model.rules.add(.rating)
-        model.rules.add(.category)
-        model.rules.add(.group)
+        model.rules.add(.keyword)
+        model.rules.addGroup()
         let view = SampleBuilderView(model: model)
         _ = view.body
     }
@@ -157,8 +157,8 @@ final class ViewRenderingTests: XCTestCase {
     func test_givenEachGroupMatchAndDepth_whenBuildingRuleGroupEditor_thenBodyDoesNotCrash() {
         var group = RuleGroupDraft()
         group.add(.rating)
-        group.add(.category)
-        group.add(.group)
+        group.add(.keyword)
+        group.addGroup()
         for match in [GroupMatch.all, .any, .none] {
             group.match = match
             _ = RuleGroupEditor(group: .constant(group), propTree: nestedTree, depth: 0, onRemove: nil).body
@@ -170,8 +170,8 @@ final class ViewRenderingTests: XCTestCase {
     func test_givenEachRuleKind_whenBuildingRuleRow_thenBodyDoesNotCrash() {
         for content: RuleDraft.Content in [
             .rating(RatingRuleDraft()),
-            .category(CategoryRuleDraft()),
-            .category(CategoryRuleDraft(mode: .all, selectedGUIDs: ["prop-pines"])),
+            .keyword(KeywordRuleDraft()),
+            .keyword(KeywordRuleDraft(operator: .isAllOf, selectedGUIDs: ["prop-pines"])),
             .path(PathRuleDraft()),
             .label(LabelRuleDraft()),
             .fileType(FileTypeRuleDraft()),
@@ -183,12 +183,15 @@ final class ViewRenderingTests: XCTestCase {
         }
     }
 
-    func test_givenACategoryRule_whenBuildingItsRow_thenBothEmptyAndNonEmptyTreesRender() {
-        _ = CategoryRuleRow(rule: .constant(CategoryRuleDraft()), propTree: [], onRemove: {}).body
-        _ = CategoryRuleRow(
-            rule: .constant(CategoryRuleDraft(mode: .none, selectedGUIDs: ["cat-nature"])),
+    func test_givenAKeywordRule_whenBuildingItsRow_thenBothEmptyAndNonEmptyTreesAndPathTextRender() {
+        _ = KeywordRuleRow(rule: .constant(KeywordRuleDraft()), propTree: [], onRemove: {}).body
+        _ = KeywordRuleRow(
+            rule: .constant(KeywordRuleDraft(operator: .isNoneOf, selectedGUIDs: ["cat-nature"])),
             propTree: nestedTree,
             onRemove: {}
+        ).body
+        _ = KeywordRuleRow(
+            rule: .constant(KeywordRuleDraft(operator: .hasPart, text: "Pines")), propTree: nestedTree, onRemove: {}
         ).body
     }
 

@@ -36,10 +36,10 @@ final class RuleGroupDraftTests: XCTestCase {
         XCTAssertEqual(filter(draft), SampleFilter(rating: .atLeast(3)))
     }
 
-    func test_givenAnEmptyGroup_whenAddingACategoryRule_thenItMatchesAnyOfNothingUntilCategoriesArePicked() {
+    func test_givenAnEmptyGroup_whenAddingAKeywordRule_thenItMatchesAnyOfNothingUntilKeywordsArePicked() {
         var draft = RuleGroupDraft()
 
-        draft.add(.category)
+        draft.add(.keyword)
 
         XCTAssertEqual(filter(draft), SampleFilter(category: CategoryFilter(branches: [], mode: .any)))
     }
@@ -47,7 +47,7 @@ final class RuleGroupDraftTests: XCTestCase {
     func test_givenAGroup_whenAddingRules_thenTheyAppearInTheOrderAdded() {
         var draft = RuleGroupDraft()
 
-        draft.add(.category)
+        draft.add(.keyword)
         draft.add(.rating)
 
         XCTAssertEqual(
@@ -58,7 +58,7 @@ final class RuleGroupDraftTests: XCTestCase {
     func test_givenAGroup_whenAddingANestedGroup_thenItStartsAsAnEmptyAllOfGroup() {
         var draft = RuleGroupDraft()
 
-        draft.add(.group)
+        draft.addGroup()
 
         XCTAssertEqual(filter(draft).root.rules, [.group(RuleGroup(match: .all, rules: []))])
     }
@@ -71,7 +71,7 @@ final class RuleGroupDraftTests: XCTestCase {
         let firstID = draft.rules[0].id
 
         draft.add(.rating)
-        draft.add(.group)
+        draft.addGroup()
 
         XCTAssertEqual(draft.rules[0].id, firstID)
         XCTAssertEqual(Set(draft.rules.map(\.id)).count, 3)
@@ -178,9 +178,9 @@ final class RuleGroupDraftTests: XCTestCase {
 
     func test_givenACategoryRule_whenPickingAParent_thenItsSubcategoriesAreIncluded() {
         var draft = RuleGroupDraft()
-        draft.add(.category)
+        draft.add(.keyword)
 
-        draft.rules[0].content = .category(CategoryRuleDraft(mode: .none, selectedGUIDs: ["prop-pines"]))
+        draft.rules[0].content = .keyword(KeywordRuleDraft(operator: .isNoneOf, selectedGUIDs: ["prop-pines"]))
 
         let pines = CategoryBranch(rootGUID: "prop-pines", propGUIDs: ["prop-pines", "prop-tall-pines"])
         XCTAssertEqual(filter(draft), SampleFilter(category: CategoryFilter(branches: [pines], mode: .none)))
@@ -210,11 +210,11 @@ final class RuleGroupDraftTests: XCTestCase {
         // "3+ stars, but none of [Pines]": the exclude pattern.
         var draft = RuleGroupDraft()
         draft.add(.rating)
-        draft.add(.group)
+        draft.addGroup()
         guard case .group(var nested) = draft.rules[1].content else { return XCTFail("expected a group") }
         nested.match = .none
-        nested.add(.category)
-        nested.rules[0].content = .category(CategoryRuleDraft(mode: .any, selectedGUIDs: ["prop-tall-pines"]))
+        nested.add(.keyword)
+        nested.rules[0].content = .keyword(KeywordRuleDraft(operator: .isAnyOf, selectedGUIDs: ["prop-tall-pines"]))
         draft.rules[1].content = .group(nested)
 
         let tallPines = CategoryBranch(rootGUID: "prop-tall-pines", propGUIDs: ["prop-tall-pines"])
@@ -233,7 +233,7 @@ final class RuleGroupDraftTests: XCTestCase {
     func test_givenSeveralRules_whenRemovingOne_thenOnlyThatRuleIsGone() {
         var draft = RuleGroupDraft()
         draft.add(.rating)
-        draft.add(.category)
+        draft.add(.keyword)
         let ratingID = draft.rules[0].id
 
         draft.removeRule(id: ratingID)
@@ -247,6 +247,139 @@ final class RuleGroupDraftTests: XCTestCase {
         let before = draft
 
         draft.removeRule(id: UUID())
+
+        XCTAssertEqual(draft, before)
+    }
+
+    // MARK: - Keyword rules: picked keywords or path text
+
+    func test_givenAKeywordRuleWithKeywordsPicked_whenSwitchingToAPathOperatorAndBack_thenThePicksAreKept() {
+        var draft = RuleGroupDraft()
+        draft.add(.keyword)
+        draft.rules[0].content = .keyword(KeywordRuleDraft(operator: .isAnyOf, selectedGUIDs: ["prop-pines"]))
+
+        draft.rules[0].content = .keyword(KeywordRuleDraft(operator: .contains, selectedGUIDs: ["prop-pines"], text: "leg"))
+        XCTAssertEqual(filter(draft).root.rules, [.keywordPath(KeywordPathFilter(kind: .contains, text: "leg"))])
+
+        draft.rules[0].content = .keyword(KeywordRuleDraft(operator: .isAnyOf, selectedGUIDs: ["prop-pines"], text: "leg"))
+        let pines = CategoryBranch(rootGUID: "prop-pines", propGUIDs: ["prop-pines", "prop-tall-pines"])
+        XCTAssertEqual(filter(draft).root.rules, [.category(CategoryFilter(branches: [pines], mode: .any))])
+    }
+
+    func test_givenEachKeywordPathOperator_whenConverting_thenItsKindAndNegationFollow() {
+        let expected: [(KeywordOperator, KeywordPathMatchKind, Bool)] = [
+            (.contains, .contains, false), (.doesNotContain, .contains, true),
+            (.hasPart, .hasPart, false), (.hasNoPart, .hasPart, true),
+            (.startsWith, .startsWith, false), (.doesNotStartWith, .startsWith, true),
+            (.endsWith, .endsWith, false), (.doesNotEndWith, .endsWith, true),
+        ]
+        for (keywordOperator, kind, negated) in expected {
+            var draft = RuleGroupDraft()
+            draft.add(.keyword)
+            draft.rules[0].content = .keyword(KeywordRuleDraft(operator: keywordOperator, text: "Trees"))
+
+            XCTAssertEqual(
+                filter(draft).root.rules, [.keywordPath(KeywordPathFilter(kind: kind, text: "Trees", negated: negated))],
+                "\(keywordOperator)")
+        }
+    }
+
+    func test_givenEachPickedKeywordsOperator_whenConverting_thenItsModeFollows() {
+        let expected: [(KeywordOperator, CategoryMatchMode)] = [(.isAnyOf, .any), (.isAllOf, .all), (.isNoneOf, .none)]
+        for (keywordOperator, mode) in expected {
+            var draft = RuleGroupDraft()
+            draft.add(.keyword)
+            draft.rules[0].content = .keyword(KeywordRuleDraft(operator: keywordOperator, text: "ignored"))
+
+            XCTAssertEqual(filter(draft).root.rules, [.category(CategoryFilter(branches: [], mode: mode))])
+        }
+    }
+
+    // MARK: - Changing a rule's field
+
+    func test_givenARatingRow_whenItsFieldIsChangedToKeyword_thenItKeepsItsPlaceAndIdentityAsAnyOfNothing() {
+        var draft = RuleGroupDraft()
+        draft.add(.path)
+        draft.add(.rating)
+        draft.add(.path)
+        let ratingID = draft.rules[1].id
+
+        draft.changeField(ofRule: ratingID, to: .keyword)
+
+        XCTAssertEqual(draft.rules[1].id, ratingID)
+        XCTAssertEqual(draft.rules[1].field, .keyword)
+        XCTAssertEqual(filter(draft).root.rules[1], .category(CategoryFilter(branches: [], mode: .any)))
+    }
+
+    func test_givenARow_whenItsFieldIsChangedToTheSameField_thenItsSettingsAreKept() {
+        var draft = RuleGroupDraft()
+        draft.add(.rating)
+        draft.rules[0].content = .rating(RatingRuleDraft(comparison: .exactly, value: 5))
+        let before = draft
+
+        draft.changeField(ofRule: draft.rules[0].id, to: .rating)
+
+        XCTAssertEqual(draft, before)
+    }
+
+    func test_givenANestedGroupOrAnUnknownRow_whenChangingAField_thenNothingChanges() {
+        var draft = RuleGroupDraft()
+        draft.addGroup()
+        let before = draft
+
+        draft.changeField(ofRule: draft.rules[0].id, to: .rating)
+        draft.changeField(ofRule: UUID(), to: .rating)
+
+        XCTAssertEqual(draft, before)
+    }
+
+    func test_givenEachField_whenAdded_thenTheRowReportsThatField() {
+        for field in RuleField.allCases {
+            var draft = RuleGroupDraft()
+            draft.add(field)
+            XCTAssertEqual(draft.rules[0].field, field)
+        }
+        var draft = RuleGroupDraft()
+        draft.addGroup()
+        XCTAssertNil(draft.rules[0].field)
+    }
+
+    // MARK: - Inserting after a row (the row's "+")
+
+    func test_givenThreeRows_whenInsertingAfterTheSecond_thenTheNewRuleIsThird() {
+        var draft = RuleGroupDraft()
+        draft.add(.rating)
+        draft.add(.path)
+        draft.add(.rating)
+        let ids = draft.rules.map(\.id)
+
+        draft.insertRule(.path, after: ids[1])
+
+        XCTAssertEqual(draft.rules.count, 4)
+        XCTAssertEqual(draft.rules[2].field, .path)
+        XCTAssertEqual([draft.rules[0].id, draft.rules[1].id, draft.rules[3].id], ids)
+    }
+
+    func test_givenThreeRows_whenInsertingANestedGroupAfterTheSecond_thenAnEmptyAllOfGroupIsThird() {
+        var draft = RuleGroupDraft()
+        draft.add(.rating)
+        draft.add(.rating)
+        draft.add(.rating)
+
+        draft.insertGroup(after: draft.rules[1].id)
+
+        guard case .group(let group) = draft.rules[2].content else { return XCTFail("expected a group third") }
+        XCTAssertEqual(group.match, .all)
+        XCTAssertEqual(group.rules, [])
+    }
+
+    func test_givenAnUnknownRow_whenInserting_thenNothingChanges() {
+        var draft = RuleGroupDraft()
+        draft.add(.rating)
+        let before = draft
+
+        draft.insertRule(.path, after: UUID())
+        draft.insertGroup(after: UUID())
 
         XCTAssertEqual(draft, before)
     }
