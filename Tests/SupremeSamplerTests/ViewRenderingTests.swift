@@ -219,6 +219,42 @@ final class ViewRenderingTests: XCTestCase {
         }
     }
 
+    /// A draft held outside SwiftUI, so a test can edit it through a
+    /// view's binding and read the result -- a `Binding` built from a
+    /// getter/setter pair over this box.
+    private final class DraftBox {
+        var group: RuleGroupDraft
+        init(_ group: RuleGroupDraft) { self.group = group }
+        var binding: Binding<RuleGroupDraft> { Binding(get: { self.group }, set: { self.group = $0 }) }
+    }
+
+    func test_givenAPathRowAmongOthers_whenItsPlusIsClicked_thenARuleOfTheSameFieldFollowsIt() {
+        var draft = RuleGroupDraft()
+        draft.add(.path)
+        draft.add(.rating)
+        let box = DraftBox(draft)
+        let editor = RuleGroupEditor(group: box.binding, propTree: [], depth: 0, onRemove: nil)
+
+        editor.actions(for: box.group.rules[0]).add(.rule)
+
+        XCTAssertEqual(box.group.rules.map(\.field), [.path, .path, .rating])
+    }
+
+    func test_givenARowWhoseFieldChanged_whenItsOldControlWritesLate_thenTheNewFieldIsKept() {
+        var draft = RuleGroupDraft()
+        draft.add(.path)
+        let box = DraftBox(draft)
+        let rowBinding = Binding(get: { box.group.rules[0] }, set: { box.group.rules[0] = $0 })
+        let row = RuleRow(rule: rowBinding, propTree: [], depth: 0, actions: .none)
+        let oldPathControl = row.payload(
+            fallback: PathRuleDraft(), { if case .path(let p) = $0 { return p }; return nil }, RuleDraft.Content.path)
+
+        box.group.changeField(ofRule: box.group.rules[0].id, to: .keyword)
+        oldPathControl.wrappedValue = PathRuleDraft(operator: .contains, text: "late")
+
+        XCTAssertEqual(box.group.rules[0].field, .keyword)
+    }
+
     func test_givenTheAddButton_whenClickedWithOrWithoutOption_thenOptionAddsANestedGroup() {
         XCTAssertEqual(AddRuleMenu.Choice.forClick(optionHeld: false), .rule)
         XCTAssertEqual(AddRuleMenu.Choice.forClick(optionHeld: true), .group)

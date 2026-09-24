@@ -361,7 +361,7 @@ coverage is measured with `-enableCodeCoverage YES -resultBundlePath <path>` plu
 `xcrun xccov view --report <path>.xcresult` (per-file breakdown via
 `xccov view --archive --file <path> <path>.xcresult`). Source coverage
 (everything under `Sources/`, i.e. excluding the test target's own
-files) was 93.3% on 2026-09-24 (92.0% on `main` just before the
+files) was 93.9% on 2026-09-24 (92.0% on `main` just before the
 Lightroom-style rule builder; an older note here said 98%+, which no
 longer held) — comfortably above the 70% target, because most of the
 app's logic (query layer, script generation, the view-model) is

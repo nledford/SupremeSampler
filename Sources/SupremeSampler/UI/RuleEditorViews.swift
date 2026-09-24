@@ -118,7 +118,8 @@ struct RuleGroupEditor: View {
 
     /// What a row's own controls do to this group. Each closure finds the
     /// row by `id` when it runs, so it stays right after edits elsewhere.
-    private func actions(for rule: RuleDraft) -> RuleRowActions {
+    /// `internal`, not `private`, so tests can press a row's "+".
+    func actions(for rule: RuleDraft) -> RuleRowActions {
         RuleRowActions(
             changeField: { group.changeField(ofRule: rule.id, to: $0) },
             remove: { group.removeRule(id: rule.id) },
@@ -288,8 +289,8 @@ struct RuleRow: View {
     /// since changed), writes an edit back with `embed`. `<Payload>` is a
     /// generic parameter, like Rust's `fn payload<P>(...)`; an enum case
     /// such as `RuleDraft.Content.rating` doubles as its constructor
-    /// function, which is what `embed` receives.
-    private func payload<Payload>(
+    /// function, which is what `embed` receives. `internal` for tests.
+    func payload<Payload>(
         fallback: Payload, _ extract: @escaping (RuleDraft.Content) -> Payload?,
         _ embed: @escaping (Payload) -> RuleDraft.Content
     ) -> Binding<Payload> {

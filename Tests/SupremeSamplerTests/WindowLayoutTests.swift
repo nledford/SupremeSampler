@@ -25,6 +25,22 @@ final class WindowLayoutTests: XCTestCase {
         func folderPhotoCounts(for filter: SampleFilter) async throws -> [FolderPhotoCount] { [] }
     }
 
+    func test_givenTheScriptPaneHidden_whenARuleChanges_thenTheMatchCountStillRefreshes() async throws {
+        let catalog = CountingCatalog()
+        let model = SampleBuilderModel.forTesting()
+        model.injectCatalogForTesting(catalog)
+        let hosted = HostedWindow(
+            ContentView(model: model, showsScript: .constant(false)), size: NSSize(width: 1300, height: 700))
+        try await hosted.settle()
+        let before = catalog.matchCountQueries
+
+        model.rules.add(.rating)
+
+        try await hosted.waitUntil { catalog.matchCountQueries > before }
+        XCTAssertGreaterThan(catalog.matchCountQueries, before, "no count query after a rule change")
+        await hosted.close()
+    }
+
     func test_givenTheSidebarCollapsed_whenARuleChanges_thenTheMatchCountStillRefreshes() async throws {
         let catalog = CountingCatalog()
         let model = SampleBuilderModel.forTesting()
