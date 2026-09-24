@@ -69,6 +69,45 @@ scheme in Xcode.
 On first launch, choose your catalog file. The app reopens it on later
 launches, and File › Open Catalog… (⌘O) switches catalogs.
 
+## Releases
+
+Releases are cut by pushing a `vX.Y.Z` tag. `just release X.Y.Z` bumps
+`MARKETING_VERSION` in `project.yml`, commits, tags and pushes; the `Release`
+workflow then builds the DMG and publishes a GitHub Release with the DMG and a
+`SHA256SUMS` file attached. The workflow refuses a tag that disagrees with
+`MARKETING_VERSION`, so the tag and the built app can't drift apart.
+
+The DMG is **ad-hoc signed, not notarized**, so macOS quarantines it and
+refuses the first launch. Right-click the app in Applications and choose
+**Open**, or run:
+
+```bash
+xattr -cr /Applications/SupremeSampler.app
+```
+
+## Versioning
+
+The version lives in `project.yml` (`MARKETING_VERSION`); the git tag is
+`v<MARKETING_VERSION>`, and the release workflow refuses a tag that disagrees.
+
+- **Major** — a change that makes a previously generated `.psc` script select
+  different photos or stop compiling in Script Studio; a removed rule kind or
+  operator; a raised macOS floor. (The app persists no filters, so there is no
+  saved-filter contract to break.)
+- **Minor** — additive: a new rule kind, operator, folder-balance mode, or
+  script capability, where existing scripts behave identically.
+- **Patch** — a fix that restores intended behavior without changing the
+  contract; docs, icon, CI, dependency bumps.
+
+While the version is `0.y.z`, `y` is a feature and `z` is a fix, and `0.y.0` is
+reserved for anything that would be major at 1.0.0. **`1.0.0` is the gate for
+"the generated-script contract is stable"**, which is not yet met: folder
+balance and keyword path rules have not been run in Script Studio.
+
+Prereleases (`v0.2.0-rc.1`) are tagged by hand, not via `just release`, which
+accepts only `X.Y.Z`. A prerelease tag is accepted by the release workflow when
+its core matches `MARKETING_VERSION`, and is published with `--prerelease`.
+
 ## Using a generated script
 
 1. Build a filter and check the match count.

@@ -164,8 +164,9 @@ icon and accent color are unset asset-catalog slots.
   against the real reference script.
 
 **Absences future work must not fabricate:** no testimonials, customers,
-benchmarks beyond the ~10x sampling note above, pricing, licensing terms,
-screenshots, or deployment claims exist. This is a personal tool with one user.
+benchmarks beyond the ~10x sampling note above, pricing, licensing terms, or
+screenshots exist. This is a personal tool with one user; the only deployment
+story is the CI release pipeline described in `README.md`.
 
 ## Product Principles
 
@@ -180,5 +181,6 @@ screenshots, or deployment claims exist. This is a personal tool with one user.
    lives. Extend it — subgroups, include/exclude — rather than adding adjacent
    features.
 5. **Personal-tool honesty.** One user, one catalog. No onboarding ceremony, no
-   multi-user abstraction, no distribution scaffolding until explicitly asked
-   for.
+   multi-user abstraction. It is still a personal tool, but it is now built and
+   released by CI: tagged releases publish an ad-hoc-signed, non-notarized DMG
+   (see `README.md`'s Releases and Versioning sections).
