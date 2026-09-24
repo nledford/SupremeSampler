@@ -41,9 +41,10 @@ final class WindowLayoutTests: XCTestCase {
     }
 
     /// The whole window at its minimum width with the script shown, over
-    /// a rule tree using every field and a nested group: it must lay out
-    /// without AppKit's constraint-loop exception (XCTest records that as
-    /// a failure of this test on its own).
+    /// a rule tree using every field and a nested group, then a rule
+    /// added: it must lay out without AppKit's constraint-loop exception,
+    /// which XCTest records as a failure of this test on its own (the
+    /// real app crashed this way with the script as an `.inspector`).
     func test_givenTheMinimumWindowWidthAndEveryKindOfRule_whenShown_thenItLaysOutWithoutALayoutLoop() async throws {
         let model = SampleBuilderModel.forTesting()
         model.injectCatalogForTesting(
@@ -59,7 +60,8 @@ final class WindowLayoutTests: XCTestCase {
             model.rules.rules[model.rules.rules.count - 1].content = .group(nested)
         }
 
-        let hosted = HostedWindow(ContentView(model: model), size: NSSize(width: 1100, height: 600))
+        let hosted = HostedWindow(
+            ContentView(model: model, showsScript: .constant(true)), size: NSSize(width: ContentView.minimumWidth, height: 600))
         try await hosted.settle(for: .seconds(1))
         // Adding a rule with the script showing is what crashed the app
         // when the script was an `.inspector`.
@@ -67,13 +69,19 @@ final class WindowLayoutTests: XCTestCase {
         model.rules.addGroup()
         try await hosted.settle(for: .seconds(1))
 
-        XCTAssertGreaterThanOrEqual(hosted.window.frame.width, 1100)
+        // The window can't be narrower than its panes' minimums, so the
+        // rules pane really had its minimum or more (widths it's measured
+        // against in `RuleRowWidthTests`).
+        XCTAssertEqual(hosted.window.contentLayoutRect.width, ContentView.minimumWidth, accuracy: 1)
         await hosted.close()
     }
 
-    /// ⌘S is the window's, not the script pane's: the pane can be
-    /// hidden, and a hidden inspector's views are gone.
-    func test_givenTheScriptPaneHidden_whenSavingFromTheWindow_thenTheScriptIsSavedThroughItsChooser() async throws {
+    /// ⌘S is registered by the window (`ContentView`), not the script
+    /// pane, which can be hidden -- a hidden pane's views are gone. This
+    /// checks the window's own action saves; that File > Save Script…
+    /// reaches it with the pane hidden was checked by hand in the running
+    /// app (2026-09-24), since `.focusedSceneValue` needs a real scene.
+    func test_givenTheWindowsSaveAction_whenSaving_thenTheScriptIsSavedThroughItsChooser() async throws {
         let destination = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".psc")
         defer { try? FileManager.default.removeItem(at: destination) }
         let model = SampleBuilderModel.forTesting()
@@ -81,7 +89,7 @@ final class WindowLayoutTests: XCTestCase {
         model.refreshMatchingCount()
         await model.waitForPendingMatchCountForTesting()
         let chooser = FakeDestinationChooser(answer: destination)
-        let view = ContentView(model: model, destinationChooser: chooser)
+        let view = ContentView(model: model, showsScript: .constant(false), destinationChooser: chooser)
 
         XCTAssertTrue(view.saveScriptAction.isEnabled)
         await view.saveScript()

@@ -28,21 +28,21 @@ struct ContentView: View {
     @State private var columnVisibility: NavigationSplitViewVisibility
 
     /// Whether the generated script shows beside the rules (it can be
-    /// hidden to give the rules the whole width). Remembered per
-    /// window across launches: `@SceneStorage` is `@State` saved with the
-    /// window's restored state.
-    @SceneStorage("showsScriptInspector") private var showsScript = true
+    /// hidden to give the rules the whole width). Owned by `MainWindow`,
+    /// which remembers it per window; tests pass their own.
+    @Binding private var showsScript: Bool
 
     /// Where ⌘S saves to: the real save panel, or a fake in tests.
     var destinationChooser: any ScriptDestinationChoosing = SavePanelDestinationChooser()
 
-    /// Plain default init for real use (`ContentView()` in
+    /// Plain default init for real use (`MainWindow` in
     /// `SupremeSamplerApp`) -- relies on `model`'s own default
     /// value above. Declared explicitly only
     /// because defining the `model:` init below (needed for testing)
     /// suppresses Swift's normally-automatic memberwise init.
-    init() {
+    init(showsScript: Binding<Bool>) {
         _columnVisibility = State(initialValue: .all)
+        _showsScript = showsScript
     }
 
     /// Test seam: lets a test supply a pre-configured model (e.g. one
@@ -66,10 +66,11 @@ struct ContentView: View {
     @MainActor
     init(
         model: SampleBuilderModel, columnVisibility: NavigationSplitViewVisibility = .all,
-        destinationChooser: (any ScriptDestinationChoosing)? = nil
+        showsScript: Binding<Bool> = .constant(true), destinationChooser: (any ScriptDestinationChoosing)? = nil
     ) {
         _model = State(wrappedValue: model)
         _columnVisibility = State(initialValue: columnVisibility)
+        _showsScript = showsScript
         // Optional rather than defaulting to the real chooser, for the
         // same default-argument isolation reason as `model` above.
         if let destinationChooser { self.destinationChooser = destinationChooser }
@@ -94,10 +95,12 @@ struct ContentView: View {
                     // `WindowLayoutTests` guards it.
                     HSplitView {
                         RuleBuilderView(model: model)
-                            .frame(minWidth: 480, maxWidth: .infinity, maxHeight: .infinity)
+                            .frame(minWidth: RuleBuilderView.minimumWidth, maxWidth: .infinity, maxHeight: .infinity)
                         if showsScript {
                             ScriptPreviewView(model: model)
-                                .frame(minWidth: 360, idealWidth: 460, maxWidth: .infinity, maxHeight: .infinity)
+                                .frame(
+                                    minWidth: ScriptPreviewView.minimumWidth, idealWidth: ScriptPreviewView.idealWidth,
+                                    maxWidth: .infinity, maxHeight: .infinity)
                         }
                     }
                     .toolbar {
@@ -132,7 +135,7 @@ struct ContentView: View {
                 .focusedSceneValue(\.saveScriptAction, saveScriptAction)
             }
         }
-        .frame(minWidth: 1100, minHeight: 560)
+        .frame(minWidth: Self.minimumWidth, minHeight: 560)
         // `.task` runs once when the view first appears (and again if
         // its identity changes), the idiomatic SwiftUI hook for a one-
         // time startup action -- unlike putting this in `init()`, which
@@ -160,13 +163,10 @@ struct ContentView: View {
         }
     }
 
-    /// Pulled out of the `.fileImporter` closure for the same reason as
-    /// `CatalogPickerView.handleFileImporterResult`: directly unit-
-    /// testable without driving the system Open panel. Not shared with
-    /// that method via a common helper -- the two call sites are each a
-    /// few lines, and the two views have different reasons to exist
-    /// (first-open vs. switch-catalog), so a shared abstraction here
-    /// would cost more than it saves.
+    /// The window's minimum width: every pane at its minimum.
+    static let minimumWidth = SampleSettingsView.minimumWidth + RuleBuilderView.minimumWidth
+        + ScriptPreviewView.minimumWidth
+
     /// File > Save Script…'s action for this window: enabled once the
     /// match count has finished (`SampleBuilderModel.canSaveScript`).
     var saveScriptAction: SaveScriptAction {
@@ -181,6 +181,13 @@ struct ContentView: View {
         await model.saveScript(using: destinationChooser, startingIn: PSCFile.preferredDirectory())
     }
 
+    /// Pulled out of the `.fileImporter` closure for the same reason as
+    /// `CatalogPickerView.handleFileImporterResult`: directly unit-
+    /// testable without driving the system Open panel. Not shared with
+    /// that method via a common helper -- the two call sites are each a
+    /// few lines, and the two views have different reasons to exist
+    /// (first-open vs. switch-catalog), so a shared abstraction here
+    /// would cost more than it saves.
     func handleCatalogFileImporterResult(_ result: Result<URL, Error>) {
         switch result {
         case .success(let url):

@@ -5,6 +5,9 @@ import SwiftUI
 /// Save… (write a `.psc` file, normally into the scripts repo). Save
 /// waits for the pre-flight count -- see `SampleBuilderModel.canSaveScript`.
 struct ScriptPreviewView: View {
+    static let minimumWidth: CGFloat = 360
+    static let idealWidth: CGFloat = 460
+
     var model: SampleBuilderModel
 
     /// Defaults to the real system clipboard; tests substitute an

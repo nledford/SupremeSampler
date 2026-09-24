@@ -3,6 +3,8 @@ import SwiftUI
 /// The sidebar: sample size, folder balance, and the live pre-flight
 /// match count. The rules themselves are the main pane (`RuleBuilderView`).
 struct SampleSettingsView: View {
+    static let minimumWidth: CGFloat = 260
+
     // `@Bindable` is what lets `$model.sampleSize` etc. work below: it
     // derives a two-way `Binding` for each stored property of an
     // `@Observable` reference, the way Vue's `v-model` or Svelte's
@@ -99,7 +101,7 @@ struct SampleSettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .navigationSplitViewColumnWidth(min: 260, ideal: 300)
+        .navigationSplitViewColumnWidth(min: Self.minimumWidth, ideal: 300)
     }
 
     /// One segmented control rather than a toggle plus a slider: "Off" is

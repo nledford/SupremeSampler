@@ -181,26 +181,66 @@ struct RuleRow: View {
                 bookmarks: bookmarks
             )
         } else if let field = rule.field {
-            HStack(spacing: 8) {
-                Picker("Field", selection: Binding(get: { field }, set: actions.changeField)) {
-                    ForEach(RuleField.allCases) { field in
-                        Text(field.rawValue).tag(field)
-                    }
-                }
-                .labelsHidden()
-                .fixedSize()
-
-                controls
-                    // A new field is a new set of controls: without this,
-                    // SwiftUI could keep one field's typed-but-unsaved text
-                    // (view `@State`) for the next field in the same spot.
-                    .id(field)
-
-                Spacer(minLength: 0)
-                RemoveRuleButton(accessibilityLabel: "Remove \(field.rawValue.lowercased()) rule", action: actions.remove)
-                AddRuleMenu(accessibilityLabel: "Add rule after this one", onAdd: actions.add)
+            // One line when it fits, as Lightroom draws it; otherwise the
+            // operator and value drop to an indented second line rather
+            // than squeezing or overflowing. `ViewThatFits` shows the
+            // first child whose ideal width fits -- like a CSS container
+            // query choosing between two layouts.
+            ViewThatFits(in: .horizontal) {
+                line(field: field, stacked: false)
+                line(field: field, stacked: true)
             }
         }
+    }
+
+    /// The row's two layouts. `internal` so `RuleRowWidthTests` can
+    /// measure each one.
+    @ViewBuilder
+    func line(field: RuleField, stacked: Bool) -> some View {
+        if stacked {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 8) {
+                    fieldPicker(field)
+                    Spacer(minLength: 0)
+                    rowButtons(field)
+                }
+                HStack(spacing: 8) {
+                    fieldControls(field)
+                }
+                .padding(.leading, 16)
+            }
+        } else {
+            HStack(spacing: 8) {
+                fieldPicker(field)
+                fieldControls(field)
+                Spacer(minLength: 0)
+                rowButtons(field)
+            }
+        }
+    }
+
+    private func fieldPicker(_ field: RuleField) -> some View {
+        Picker("Field", selection: Binding(get: { field }, set: actions.changeField)) {
+            ForEach(RuleField.allCases) { field in
+                Text(field.rawValue).tag(field)
+            }
+        }
+        .labelsHidden()
+        .fixedSize()
+    }
+
+    private func fieldControls(_ field: RuleField) -> some View {
+        controls
+            // A new field is a new set of controls: without this, SwiftUI
+            // could keep one field's typed-but-unsaved text (view
+            // `@State`) for the next field in the same spot.
+            .id(field)
+    }
+
+    @ViewBuilder
+    private func rowButtons(_ field: RuleField) -> some View {
+        RemoveRuleButton(accessibilityLabel: "Remove \(field.rawValue.lowercased()) rule", action: actions.remove)
+        AddRuleMenu(accessibilityLabel: "Add rule after this one", onAdd: actions.add)
     }
 
     /// The operator and value controls for this row's field. `@ViewBuilder`
@@ -255,7 +295,13 @@ struct RuleRow: View {
     ) -> Binding<Payload> {
         Binding(
             get: { extract(rule.content) ?? fallback },
-            set: { rule.content = embed($0) }
+            // Only while the rule is still this case: a late write from a
+            // control the row has since replaced must not undo a field
+            // change.
+            set: { newValue in
+                guard extract(rule.content) != nil else { return }
+                rule.content = embed(newValue)
+            }
         )
     }
 }
@@ -438,7 +484,7 @@ struct DebouncedTextField: View {
         TextField(title, text: $typedText, prompt: Text(prompt))
             .labelsHidden()
             .textFieldStyle(.roundedBorder)
-            .frame(minWidth: 120, idealWidth: 220, maxWidth: 280)
+            .frame(minWidth: 120, idealWidth: 200, maxWidth: 280)
             .help(help)
             // `.task(id:)` restarts whenever `typedText` changes and
             // cancels the previous run -- so the sleep below is a
@@ -605,6 +651,7 @@ struct AddRuleMenu: View {
             Button("Add nested group") { onAdd(.group) }
         } label: {
             Image(systemName: "plus.circle")
+                .accessibilityLabel(accessibilityLabel)
         } primaryAction: {
             // `NSEvent` is AppKit, the older macOS UI framework under
             // SwiftUI; its class-level `modifierFlags` says which modifier

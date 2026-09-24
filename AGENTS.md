@@ -40,8 +40,16 @@ gate) → a `NavigationSplitView` in `ContentView`: `SampleSettingsView`
 (sidebar: sample size, folder balance, live match count) and, in the
 detail column, `RuleBuilderView` (the rule tree, the wide main pane)
 beside `ScriptPreviewView` (live preview + Copy and Save…), which a
-toolbar button hides (`@SceneStorage`, per window). New windows open at
-1440×820; the minimum is 1100 wide.
+toolbar button hides. `MainWindow` (in `SupremeSamplerApp.swift`) owns
+that choice as `@SceneStorage`, remembered per window, and passes it
+down as a binding: `@SceneStorage` only works inside a real app scene,
+and tests render `ContentView` on their own. Widths are constants on
+the panes: the window's minimum (`ContentView.minimumWidth`, 1200) is
+the sum of the panes' minimums; a new window is 1520 wide, room for
+the sidebar and script at their ideal widths plus
+`RuleBuilderView.comfortableWidth` for the rules. After that, where the
+dividers sit is the user's: AppKit saves and restores split-view
+divider positions with the window, over any SwiftUI ideal width.
 
 **The script pane is an `HSplitView`, not `.inspector`.** An
 `.inspector` in the `NavigationSplitView`'s detail column crashed the
@@ -88,6 +96,9 @@ on every read. Edits are methods named for what the user does —
 rule), `insertRule(_:after:)`/`insertGroup(after:)` (a row's "+"),
 `changeField(ofRule:to:)` (keeps the row's place and `UUID`),
 `removeRule` — unit-tested without views (`RuleGroupDraftTests`).
+The row's payload bindings ignore a write once the row has become a
+different field, so a late write from a replaced control can't undo a
+field change.
 
 `RuleEditorViews.swift` renders it Lightroom-style: one line per rule,
 `[Field] [operator] [value] … [− +]`, each group a bordered box (nested
@@ -95,7 +106,12 @@ ones inside their parent's) headed "Match [all] of the following
 rules:" / "[All/Any/None] of the following are true". List values
 (keyword picks, labels, file types, bookmarks) sit behind a summary
 button (`ValueSummary`, "Trees, Rivers +2") that opens the list in a
-popover, so rows stay one line. "+" is a `Menu` split button: click
+popover. A row is one line when it fits and otherwise stacks, operator
+and value on an indented second line (`ViewThatFits`), never squeezed.
+`RuleRowWidthTests` measures every kind of row with its widest operator:
+one line must fit `comfortableWidth` at the top level, stacked must fit
+`RuleBuilderView.minimumWidth` three groups deep. Widen a control and
+those constants may need to move. "+" is a `Menu` split button: click
 repeats the row's field below it; Option-click or the arrow adds a
 nested group. Each row's controls are keyed with `.id(field)` so
 typed-but-unsaved text can't carry over to a new field. Text fields go
@@ -339,17 +355,18 @@ called while a different catalog is open (it just replaces `catalog`/
 
 ## Testing and coverage
 
-`just test` runs the full suite (`xcodebuild test`); coverage is
-measured with `-enableCodeCoverage YES -resultBundlePath <path>` plus
+**Coverage target: at least 70% of `Sources/`.** More is welcome but
+not required. `just test` runs the full suite (`xcodebuild test`);
+coverage is measured with `-enableCodeCoverage YES -resultBundlePath <path>` plus
 `xcrun xccov view --report <path>.xcresult` (per-file breakdown via
 `xccov view --archive --file <path> <path>.xcresult`). Source coverage
 (everything under `Sources/`, i.e. excluding the test target's own
 files) was 93.3% on 2026-09-24 (92.0% on `main` just before the
 Lightroom-style rule builder; an older note here said 98%+, which no
-longer held) — comfortably above a 70% bar, kept high deliberately
-since most of the app's logic (query layer, script generation, the
-view-model) is pure/testable, not because every last line needs
-covering for its own sake. The biggest remaining gaps are the real
+longer held) — comfortably above the 70% target, because most of the
+app's logic (query layer, script generation, the view-model) is
+pure and easy to test, not because every last line needs covering for
+its own sake. The biggest remaining gaps are the real
 system adapters (`SavePanelDestinationChooser`, `SystemClipboard`,
 which tests replace with fakes by design) and view closures that only
 run while SwiftUI renders (popover contents, button actions). Two older,

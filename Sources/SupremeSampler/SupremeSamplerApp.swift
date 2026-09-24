@@ -21,18 +21,19 @@ struct SupremeSamplerApp: App {
         // WindowGroup { ... } is SwiftUI's declarative UI style: you
         // describe *what* the window contains, not imperative
         // create-and-append calls. If you know React, this reads like
-        // JSX/component composition -- `ContentView()` here is roughly
-        // `<ContentView />`. The `{ ... }` is a trailing closure that
+        // JSX/component composition -- `MainWindow()` here is roughly
+        // `<MainWindow />`. The `{ ... }` is a trailing closure that
         // SwiftUI's "result builder" machinery turns into a view tree;
         // there's no equivalent construct in Rust/TS/Python, but the net
         // effect is the same as JSX children.
         WindowGroup {
-            ContentView()
+            MainWindow()
         }
         // Wide enough for settings, one-line rules and the script side by
-        // side. Only a new window's size: macOS restores a window's last
-        // size (at least `ContentView`'s minimum) over this.
-        .defaultSize(width: 1440, height: 820)
+        // side (`RuleBuilderView.comfortableWidth`). Only a new window's
+        // size: macOS restores a window's last size (at least
+        // `ContentView`'s minimum) over this.
+        .defaultSize(width: RuleBuilderView.defaultWindowWidth, height: 820)
         // `.commands { ... }` extends the app's menu bar -- the SwiftUI
         // analogue of a web app registering global keyboard shortcuts,
         // except these show up as real, discoverable File-menu items
@@ -54,5 +55,17 @@ struct SupremeSamplerApp: App {
             }
             SaveScriptCommands()
         }
+    }
+}
+
+/// One window's root: owns what that window remembers across launches.
+/// `@SceneStorage` is `@State` saved with the window's restored state; it
+/// only works inside a real app scene, so it lives here rather than in
+/// `ContentView`, which tests render on their own.
+struct MainWindow: View {
+    @SceneStorage("showsScript") private var showsScript = true
+
+    var body: some View {
+        ContentView(showsScript: $showsScript)
     }
 }
