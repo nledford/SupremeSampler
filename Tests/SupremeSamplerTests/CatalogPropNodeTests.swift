@@ -81,4 +81,20 @@ final class CatalogPropNodeTests: XCTestCase {
         let parent = CatalogPropNode(guid: "g2", name: "Parent", children: [leaf])
         XCTAssertEqual(parent.childrenOrNil, [leaf])
     }
+
+    /// A prop whose GUID is also a category's, parented under that same
+    /// category, is its own child. Unguarded, building the tree recursed
+    /// forever. The cap is the one `KeywordPathFilter.keywordPathsCTE`
+    /// uses, so the tree and a generated script see the same paths.
+    func test_givenAPropThatIsItsOwnAncestor_whenBuildingTree_thenNestingStopsAtTheDepthCap() {
+        let tree = CatalogPropNode.buildTree(
+            categories: [(guid: "loop", name: "Cat")],
+            props: [(guid: "loop", parentGUID: "loop", name: "Loop")]
+        )
+
+        func deepest(_ node: CatalogPropNode) -> Int {
+            node.children.map { 1 + deepest($0) }.max() ?? 0
+        }
+        XCTAssertEqual(tree.map(deepest), [CatalogPropNode.maxDepth])
+    }
 }

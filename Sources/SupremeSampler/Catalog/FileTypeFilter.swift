@@ -15,10 +15,7 @@ struct FileTypeFilter: Equatable {
     /// name whose last extension is `ext`. Ending in ".jpg" is the same
     /// test as "last extension is jpg" because an extension has no dot.
     static func likePattern(forExtension ext: String) -> String {
-        let escaped = ext
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "%", with: "\\%")
-            .replacingOccurrences(of: "_", with: "\\_")
+        let escaped = LikePattern.escape(ext)
         return "%." + escaped
     }
 }

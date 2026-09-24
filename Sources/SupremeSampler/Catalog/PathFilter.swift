@@ -31,10 +31,7 @@ struct PathFilter: Equatable {
     /// `ESCAPE '\'`. Shared by both predicate renderers: it's the one
     /// piece with no binding-vs-literal difference between them.
     var likePattern: String {
-        let escaped = text
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "%", with: "\\%")
-            .replacingOccurrences(of: "_", with: "\\_")
+        let escaped = LikePattern.escape(text)
         switch kind {
         case .startsWith: return escaped + "%"
         case .endsWith: return "%" + escaped

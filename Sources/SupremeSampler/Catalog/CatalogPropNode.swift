@@ -14,6 +14,13 @@ struct CatalogPropNode: Equatable, Hashable, Identifiable {
 
     var id: String { guid }
 
+    /// The deepest a node may sit below its root category (the root is
+    /// 0). The real catalog goes 3 deep; the cap only stops a prop that
+    /// is its own ancestor -- possible when a prop's GUID equals a
+    /// category's -- from nesting forever. `KeywordPathFilter`'s SQL uses
+    /// the same cap, so both see the same paths.
+    static let maxDepth = 32
+
     /// SwiftUI's `List(_:children:)`/`OutlineGroup` use `nil` vs.
     /// non-`nil` (not empty-vs-nonempty) to decide whether a row gets a
     /// disclosure triangle at all -- a leaf with `children: []` still
@@ -59,15 +66,17 @@ struct CatalogPropNode: Equatable, Hashable, Identifiable {
             childrenByParentGUID[prop.parentGUID, default: []].append((prop.guid, prop.name))
         }
 
-        func buildNode(guid: String, name: String) -> CatalogPropNode {
-            let children = (childrenByParentGUID[guid] ?? [])
-                .sorted { $0.name < $1.name }
-                .map { buildNode(guid: $0.guid, name: $0.name) }
+        func buildNode(guid: String, name: String, depth: Int) -> CatalogPropNode {
+            let children = depth < maxDepth
+                ? (childrenByParentGUID[guid] ?? [])
+                    .sorted { $0.name < $1.name }
+                    .map { buildNode(guid: $0.guid, name: $0.name, depth: depth + 1) }
+                : []
             return CatalogPropNode(guid: guid, name: name, children: children)
         }
 
         return categories
             .sorted { $0.name < $1.name }
-            .map { buildNode(guid: $0.guid, name: $0.name) }
+            .map { buildNode(guid: $0.guid, name: $0.name, depth: 0) }
     }
 }
