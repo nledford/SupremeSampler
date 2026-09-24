@@ -529,7 +529,7 @@ struct PhotoSupremeCatalog: Sendable {
     ///
     /// Deliberately an uncorrelated `IN (SELECT ...)` rather than a
     /// correlated `EXISTS (... WHERE d.CatalogItemGUID = idCatalogItem.GUID)`.
-    /// The correlated form scans all millions of photos and probes the index
+    /// The correlated form scans every photo (millions) and probes the index
     /// once per photo per GUID, so its cost grows with the list length --
     /// which a whole branch makes long. Measured on the real catalog
     /// (2026-09-23) with multi-keyword lists: 15.7s -> 0.23s and 10.6s ->

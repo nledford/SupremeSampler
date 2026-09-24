@@ -19,8 +19,10 @@ enum PSCFile {
     /// Where generated scripts live: a separate git repo whose history
     /// is the curation audit trail (see AGENTS.md). Hard-coded because
     /// this is a one-user tool (PRODUCT.md); `preferredDirectory` falls
-    /// back gracefully when it isn't there.
-    static let scriptsRepository = URL(fileURLWithPath: "~/Projects/pascal/photo supreme")
+    /// back gracefully when it isn't there. Built from the home folder
+    /// (`~` isn't expanded in a file URL, unlike in a shell).
+    static let scriptsRepository = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent("Projects/pascal/photo supreme", isDirectory: true)
 
     /// The script's UTF-8 bytes with every line ending as LF (a CRLF
     /// that slipped in is normalized, not doubled).

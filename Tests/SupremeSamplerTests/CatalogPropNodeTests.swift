@@ -34,10 +34,9 @@ final class CatalogPropNodeTests: XCTestCase {
         XCTAssertEqual(tree[0].children.map(\.name), ["Arms", "Pines"])
     }
 
-    /// Mirrors the real catalog's actual shape (see AGENTS.md/this
-    /// feature's design notes): Nature -> Pines -> Tall Pines is a real
-    /// three-level chain in the live data, ported from a recursive SQL
-    /// CTE in an earlier Rust tool into this pure Swift equivalent.
+    /// Mirrors the real catalog's shape (see AGENTS.md): a category, a
+    /// keyword, and keywords under that -- three levels, as the tree
+    /// ported from a recursive SQL CTE in an earlier Rust tool builds.
     func test_givenMultipleLevelsOfNesting_whenBuildingTree_thenNestsAllTheWayDown() {
         let tree = CatalogPropNode.buildTree(
             categories: [(guid: "cat-nature", name: "Nature")],

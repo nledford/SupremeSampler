@@ -22,7 +22,8 @@ extension SampleBuilderModel {
 /// CRLF; the committed file is LF) and the `SAMPLE_SIZE` value, which is
 /// a parameter of the generator rather than boilerplate.
 enum ReferenceScript {
-    static let path = "~/Projects/pascal/photo supreme/RandomCatalogSample.psc"
+    static let path = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent("Projects/pascal/photo supreme/RandomCatalogSample.psc").path
 
     /// `nil` when the scripts repo isn't on this machine.
     static func load() -> (text: String, sampleSize: Int)? {

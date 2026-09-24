@@ -3,7 +3,8 @@
 ## What this is
 
 SupremeSampler is a macOS app that generates Photo Supreme (IDimager) `.psc`
-scripts for random-sampling photos out of a large catalog (millions of items), filtered by metadata (rating, category/keyword, etc.). It reads the
+scripts for random-sampling photos out of a large catalog (millions of
+items), filtered by metadata (rating, category/keyword, etc.). It reads the
 Photo Supreme SQLite catalog directly, read-only, to build filters and
 preview results before a script is ever generated or run.
 
@@ -183,7 +184,8 @@ everything, seen in the running app 2026-09-23). The fake's delay in
 `SampleBuilderModelTests` deliberately ignores cancellation: with
 `Task.sleep`, a superseded audit threw before reaching the write the
 guard protects, and removing the guard left the test passing. Checked
-by hand against the real catalog: Balanced raised the largest group's share and cut the chunked archive group's, matching the 2026-09-23 survey.
+by hand against the real catalog: Balanced raised the largest group's share and cut the
+chunked archive group's, matching the 2026-09-23 survey.
 
 `openCatalog` does *not* have the same tracked-Task/cancel guard --
 currently safe only because `CatalogPickerView` structurally can't call
@@ -317,7 +319,7 @@ for instance, so it isn't offered.
   a prop whose GUID equals a category's is its own ancestor, and once
   made `buildTree` recurse forever. Real catalog, 2026-09-24: 189
   keywords under 5 categories, max depth 3; "has a part named trees"
-  counts thousands of in 0.02–0.5s, "doesn't contain" ~1.5s. Ran under Photo
+  counts in 0.02–0.5s, "doesn't contain" ~1.5s. Ran under Photo
   Supreme's own bundled SQLite 3.35.5 (loaded via ctypes, read-only);
   **not yet run in Script Studio.** The row shows "N keywords" as you
   type, from the in-memory tree (`matchingKeywordPaths`), no query.
