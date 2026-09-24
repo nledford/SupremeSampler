@@ -257,7 +257,7 @@ final class SampleBuilderModelTests: XCTestCase {
         // hand in the running app (type "5000000", the field still shows
         // "5000000" while the generated script already reads
         // `SAMPLE_SIZE = 1000000`, with no on-screen indication anything
-        // changed). `SampleBuilderView` forces the field to resync by
+        // changed). `SampleSettingsView` forces the field to resync by
         // giving it an `.id()` derived from this counter, so it only
         // gets torn down and rebuilt (picking up the clamped value) on
         // an actual clamp -- not on every keystroke, which would drop

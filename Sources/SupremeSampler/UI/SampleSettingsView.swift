@@ -1,9 +1,8 @@
 import SwiftUI
 
-/// The left-hand rule builder: sample size, the (possibly nested) rules
-/// -- see `RuleGroupEditor` -- and the live pre-flight match count, the
-/// Lightroom Smart Collection-style interface this app was built around.
-struct SampleBuilderView: View {
+/// The sidebar: sample size, folder balance, and the live pre-flight
+/// match count. The rules themselves are the main pane (`RuleBuilderView`).
+struct SampleSettingsView: View {
     // `@Bindable` is what lets `$model.sampleSize` etc. work below: it
     // derives a two-way `Binding` for each stored property of an
     // `@Observable` reference, the way Vue's `v-model` or Svelte's
@@ -91,12 +90,6 @@ struct SampleBuilderView: View {
                 folderBalanceRow
             }
 
-            Section("Rules") {
-                RuleGroupEditor(
-                    group: $model.rules, propTree: model.propTree, depth: 0, onRemove: nil,
-                    labels: model.catalogLabels, fileTypes: model.catalogFileTypes, bookmarks: model.catalogBookmarks)
-            }
-
             Section("Preview") {
                 matchCountRow
                 if let errorMessage = model.errorMessage {
@@ -106,18 +99,7 @@ struct SampleBuilderView: View {
             }
         }
         .formStyle(.grouped)
-        .frame(minWidth: 320)
-        // Re-runs the pre-flight count whenever the derived filter
-        // changes -- not on every keystroke of unrelated state like
-        // sampleSize, since SampleFilter (an Equatable value type)
-        // doesn't include it.
-        .onChange(of: model.currentFilter) {
-            model.refreshMatchingCount()
-            model.refreshFolderAudit()
-        }
-        .onChange(of: model.folderBalance) {
-            model.refreshFolderAudit()
-        }
+        .navigationSplitViewColumnWidth(min: 260, ideal: 300)
     }
 
     /// One segmented control rather than a toggle plus a slider: "Off" is
@@ -219,5 +201,5 @@ struct SampleBuilderView: View {
 }
 
 #Preview {
-    SampleBuilderView(model: SampleBuilderModel(catalogStore: InMemoryRecentCatalogStore()))
+    SampleSettingsView(model: SampleBuilderModel(catalogStore: InMemoryRecentCatalogStore()))
 }

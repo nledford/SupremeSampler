@@ -1,4 +1,7 @@
+import AppKit
 import Foundation
+import SwiftUI
+
 @testable import SupremeSampler
 
 extension SampleBuilderModel {
@@ -47,5 +50,58 @@ final class FakeDestinationChooser: ScriptDestinationChoosing {
         askedFileName = suggestedFileName
         askedDirectory = directory
         return answer
+    }
+}
+
+/// A SwiftUI view really rendered in a window, for behavior that only
+/// happens while SwiftUI is drawing (`.onChange`, layout). Every test that
+/// renders a view in a window goes through this, because two details
+/// decide whether such a test means anything:
+///
+/// - **The window is put on screen.** A window that's built but never
+///   displayed doesn't lay out like a real one, so an offscreen result
+///   says little about the app. (2026-09-24: offscreen, a simple rule
+///   tree hit AppKit's "Update Constraints in Window" loop where the same
+///   window on screen didn't -- but on screen a fuller tree did, and so
+///   did the real app, which crashed. Trust on-screen results.)
+/// - **`close()` lets pending AppKit work finish.** AppKit reports some
+///   exceptions a moment later; without a drain they land on whichever
+///   test runs next and point the investigation at the wrong code.
+@MainActor
+final class HostedWindow {
+    let window: NSWindow
+
+    // `<Content: View>` is a generic type parameter (like Rust's
+    // `<C: View>`), so any SwiftUI view can be hosted.
+    init<Content: View>(_ view: Content, size: NSSize) {
+        window = NSWindow(
+            contentRect: NSRect(origin: .zero, size: size), styleMask: [.titled, .resizable],
+            backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        // `NSHostingView` puts a SwiftUI view inside an AppKit one.
+        window.contentView = NSHostingView(rootView: view)
+        window.orderFrontRegardless()
+    }
+
+    /// Lets SwiftUI render and run its tasks until `condition` holds or
+    /// `timeout` passes.
+    func waitUntil(timeout: Duration = .seconds(3), _ condition: () -> Bool) async throws {
+        let deadline = ContinuousClock.now + timeout
+        while !condition() && ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+    }
+
+    /// Lets the window lay out and draw for a moment.
+    func settle(for duration: Duration = .milliseconds(300)) async throws {
+        try await Task.sleep(for: duration)
+    }
+
+    /// Closes the window, then gives AppKit a moment so anything it
+    /// reports late is charged to the test that caused it.
+    func close() async {
+        window.orderOut(nil)
+        window.close()
+        try? await Task.sleep(for: .milliseconds(200))
     }
 }

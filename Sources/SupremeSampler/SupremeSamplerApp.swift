@@ -29,6 +29,10 @@ struct SupremeSamplerApp: App {
         WindowGroup {
             ContentView()
         }
+        // Wide enough for settings, one-line rules and the script side by
+        // side. Only a new window's size: macOS restores a window's last
+        // size (at least `ContentView`'s minimum) over this.
+        .defaultSize(width: 1440, height: 820)
         // `.commands { ... }` extends the app's menu bar -- the SwiftUI
         // analogue of a web app registering global keyboard shortcuts,
         // except these show up as real, discoverable File-menu items

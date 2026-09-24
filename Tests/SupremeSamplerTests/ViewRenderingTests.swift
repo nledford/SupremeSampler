@@ -126,19 +126,19 @@ final class ViewRenderingTests: XCTestCase {
         XCTAssertNotNil(model.errorMessage)
     }
 
-    // MARK: - SampleBuilderView
+    // MARK: - SampleSettingsView
 
-    func test_givenDefaultState_whenBuildingSampleBuilderView_thenBodyDoesNotCrash() {
-        let view = SampleBuilderView(model: SampleBuilderModel.forTesting())
+    func test_givenDefaultState_whenBuildingSampleSettingsView_thenBodyDoesNotCrash() {
+        let view = SampleSettingsView(model: SampleBuilderModel.forTesting())
         _ = view.body
     }
 
-    func test_givenRules_whenBuildingSampleBuilderView_thenBodyDoesNotCrash() {
+    func test_givenRules_whenBuildingSampleSettingsView_thenBodyDoesNotCrash() {
         let model = SampleBuilderModel.forTesting()
         model.rules.add(.rating)
         model.rules.add(.keyword)
         model.rules.addGroup()
-        let view = SampleBuilderView(model: model)
+        let view = SampleSettingsView(model: model)
         _ = view.body
     }
 
@@ -249,34 +249,34 @@ final class ViewRenderingTests: XCTestCase {
         _ = RatingRuleControls(rule: .constant(RatingRuleDraft(comparison: .atMost, value: 0))).body
     }
 
-    func test_givenEachFolderBalance_whenBuildingSampleBuilderView_thenBodyDoesNotCrash() {
+    func test_givenEachFolderBalance_whenBuildingSampleSettingsView_thenBodyDoesNotCrash() {
         for balance in FolderBalance.allCases {
             let model = SampleBuilderModel.forTesting()
             model.folderBalance = balance
-            _ = SampleBuilderView(model: model).body
+            _ = SampleSettingsView(model: model).body
         }
     }
 
-    func test_givenEachFolderAuditState_whenBuildingSampleBuilderView_thenBodyDoesNotCrash() async {
+    func test_givenEachFolderAuditState_whenBuildingSampleSettingsView_thenBodyDoesNotCrash() async {
         let folders = [FolderPhotoCount(path: "/p/a/", photos: 5), FolderPhotoCount(path: "/p/b/", photos: 1)]
         let model = SampleBuilderModel.forTesting()
         model.injectCatalogForTesting(FakeCatalogForViewTests(folders: folders))
         model.folderBalance = .balanced
 
         model.refreshFolderAudit()
-        _ = SampleBuilderView(model: model).body  // checking folders
+        _ = SampleSettingsView(model: model).body  // checking folders
         await model.waitForPendingFolderAuditForTesting()
         XCTAssertNotNil(model.folderBalancePreview)
-        _ = SampleBuilderView(model: model).body  // the preview
+        _ = SampleSettingsView(model: model).body  // the preview
     }
 
     func test_givenShares_whenFormattingPercents_thenATinyShareIsNotShownAsZero() {
-        XCTAssertEqual(SampleBuilderView.percent(0.806), "81%")
-        XCTAssertEqual(SampleBuilderView.percent(0.001), "<1%")
-        XCTAssertEqual(SampleBuilderView.percent(0), "0%")
+        XCTAssertEqual(SampleSettingsView.percent(0.806), "81%")
+        XCTAssertEqual(SampleSettingsView.percent(0.001), "<1%")
+        XCTAssertEqual(SampleSettingsView.percent(0), "0%")
     }
 
-    func test_givenCountingMatches_whenBuildingSampleBuilderView_thenBodyDoesNotCrash() {
+    func test_givenCountingMatches_whenBuildingSampleSettingsView_thenBodyDoesNotCrash() {
         // isCountingMatches is set synchronously at the start of
         // refreshMatchingCount(), before the query itself runs, so this
         // is observable without awaiting anything -- same technique as
@@ -286,18 +286,18 @@ final class ViewRenderingTests: XCTestCase {
         model.refreshMatchingCount()
         XCTAssertTrue(model.isCountingMatches)
 
-        let view = SampleBuilderView(model: model)
+        let view = SampleSettingsView(model: model)
         _ = view.body
     }
 
-    func test_givenMatchCountAndError_whenBuildingSampleBuilderView_thenBodyDoesNotCrash() async {
+    func test_givenMatchCountAndError_whenBuildingSampleSettingsView_thenBodyDoesNotCrash() async {
         let model = SampleBuilderModel.forTesting()
         model.injectCatalogForTesting(FakeCatalogForViewTests())
         model.refreshMatchingCount()
         await model.waitForPendingMatchCountForTesting()
         model.reportPickerFailure(NSError(domain: "test", code: 1))
 
-        let view = SampleBuilderView(model: model)
+        let view = SampleSettingsView(model: model)
         _ = view.body
     }
 

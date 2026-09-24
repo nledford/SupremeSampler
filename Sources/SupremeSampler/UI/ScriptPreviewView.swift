@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The right-hand pane: a live, read-only preview of the generated
+/// The collapsible right-hand pane: a live, read-only preview of the generated
 /// `.psc` source, with Copy (paste into Script Studio to try it out) and
 /// Save… (write a `.psc` file, normally into the scripts repo). Save
 /// waits for the pre-flight count -- see `SampleBuilderModel.canSaveScript`.
@@ -54,17 +54,8 @@ struct ScriptPreviewView: View {
             .clipShape(RoundedRectangle(cornerRadius: 6))
         }
         .padding()
-        .frame(minWidth: 420)
-        // Offers this window's save action to the File menu's "Save
-        // Script…" command (see `SaveScriptCommands`). Scoped to the
-        // focused window, so with two windows open, ⌘S saves the front
-        // one, and the menu item greys out when saving isn't possible.
-        .focusedSceneValue(
-            \.saveScriptAction,
-            SaveScriptAction(isEnabled: model.canSaveScript) {
-                Task { await saveScript() }
-            }
-        )
+        // ⌘S is registered by `ContentView`, not here: this pane can be
+        // hidden, and a hidden pane's views are gone.
     }
 
     /// What happened to the last save: the file it went to (while the

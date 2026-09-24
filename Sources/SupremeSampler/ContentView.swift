@@ -24,12 +24,26 @@ struct ContentView: View {
     // `NavigationSplitView`) is currently showing.
     @State private var isPickingCatalog = false
 
+    /// Which split-view columns show; the user can collapse the sidebar.
+    @State private var columnVisibility: NavigationSplitViewVisibility
+
+    /// Whether the generated script shows beside the rules (it can be
+    /// hidden to give the rules the whole width). Remembered per
+    /// window across launches: `@SceneStorage` is `@State` saved with the
+    /// window's restored state.
+    @SceneStorage("showsScriptInspector") private var showsScript = true
+
+    /// Where ⌘S saves to: the real save panel, or a fake in tests.
+    var destinationChooser: any ScriptDestinationChoosing = SavePanelDestinationChooser()
+
     /// Plain default init for real use (`ContentView()` in
     /// `SupremeSamplerApp`) -- relies on `model`'s own default
     /// value above. Declared explicitly only
     /// because defining the `model:` init below (needed for testing)
     /// suppresses Swift's normally-automatic memberwise init.
-    init() {}
+    init() {
+        _columnVisibility = State(initialValue: .all)
+    }
 
     /// Test seam: lets a test supply a pre-configured model (e.g. one
     /// with `injectCatalogForTesting` already called) to exercise the
@@ -50,8 +64,15 @@ struct ContentView: View {
     /// Python property's underlying storage via `self.__dict__`, just a
     /// language feature here instead of a convention.
     @MainActor
-    init(model: SampleBuilderModel) {
+    init(
+        model: SampleBuilderModel, columnVisibility: NavigationSplitViewVisibility = .all,
+        destinationChooser: (any ScriptDestinationChoosing)? = nil
+    ) {
         _model = State(wrappedValue: model)
+        _columnVisibility = State(initialValue: columnVisibility)
+        // Optional rather than defaulting to the real chooser, for the
+        // same default-argument isolation reason as `model` above.
+        if let destinationChooser { self.destinationChooser = destinationChooser }
     }
 
     var body: some View {
@@ -59,15 +80,59 @@ struct ContentView: View {
             if model.catalogPath == nil {
                 CatalogPickerView(model: model)
             } else {
-                NavigationSplitView {
-                    SampleBuilderView(model: model)
+                NavigationSplitView(columnVisibility: $columnVisibility) {
+                    SampleSettingsView(model: model)
                 } detail: {
-                    ScriptPreviewView(model: model)
+                    // The rules and the script side by side, the script
+                    // collapsible. Not `.inspector`, the obvious SwiftUI
+                    // tool: an inspector in a `NavigationSplitView`'s detail
+                    // column crashed the app ("Update Constraints in Window"
+                    // loop, 2026-09-24) as soon as the detail held any
+                    // AppKit-backed control -- a lone `Button` was enough --
+                    // while this `HSplitView` (a SwiftUI wrapper over
+                    // AppKit's `NSSplitView`) held up at every width tried.
+                    // `WindowLayoutTests` guards it.
+                    HSplitView {
+                        RuleBuilderView(model: model)
+                            .frame(minWidth: 480, maxWidth: .infinity, maxHeight: .infinity)
+                        if showsScript {
+                            ScriptPreviewView(model: model)
+                                .frame(minWidth: 360, idealWidth: 460, maxWidth: .infinity, maxHeight: .infinity)
+                        }
+                    }
+                    .toolbar {
+                        ToolbarItem {
+                            Button {
+                                showsScript.toggle()
+                            } label: {
+                                Label(showsScript ? "Hide Script" : "Show Script", systemImage: "sidebar.right")
+                            }
+                            .help(showsScript ? "Hide the generated script" : "Show the generated script")
+                        }
+                    }
                 }
                 .navigationTitle("SupremeSampler")
+                // Here, on the view that's always present while a catalog
+                // is open, rather than in a pane the user can hide. Re-runs
+                // the pre-flight count when the filter changes -- not on
+                // unrelated state like the sample size, which `SampleFilter`
+                // (an `Equatable` value) doesn't include.
+                .onChange(of: model.currentFilter) {
+                    model.refreshMatchingCount()
+                    model.refreshFolderAudit()
+                }
+                .onChange(of: model.folderBalance) {
+                    model.refreshFolderAudit()
+                }
+                // Offers this window's save action to File > Save Script…
+                // (see `SaveScriptCommands`). Registered here, not in the
+                // script pane: the pane can be hidden, and ⌘S should still
+                // work. Scoped to the focused window, so with two windows
+                // open ⌘S saves the front one.
+                .focusedSceneValue(\.saveScriptAction, saveScriptAction)
             }
         }
-        .frame(minWidth: 800, minHeight: 500)
+        .frame(minWidth: 1100, minHeight: 560)
         // `.task` runs once when the view first appears (and again if
         // its identity changes), the idiomatic SwiftUI hook for a one-
         // time startup action -- unlike putting this in `init()`, which
@@ -102,6 +167,20 @@ struct ContentView: View {
     /// few lines, and the two views have different reasons to exist
     /// (first-open vs. switch-catalog), so a shared abstraction here
     /// would cost more than it saves.
+    /// File > Save Script…'s action for this window: enabled once the
+    /// match count has finished (`SampleBuilderModel.canSaveScript`).
+    var saveScriptAction: SaveScriptAction {
+        SaveScriptAction(isEnabled: model.canSaveScript) {
+            Task { await saveScript() }
+        }
+    }
+
+    /// Opens the save panel in the scripts repo (when it exists) and
+    /// writes the file -- the same as the script pane's Save… button.
+    func saveScript() async {
+        await model.saveScript(using: destinationChooser, startingIn: PSCFile.preferredDirectory())
+    }
+
     func handleCatalogFileImporterResult(_ result: Result<URL, Error>) {
         switch result {
         case .success(let url):

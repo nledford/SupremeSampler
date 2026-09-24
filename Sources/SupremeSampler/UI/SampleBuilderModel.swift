@@ -103,7 +103,7 @@ final class SampleBuilderModel {
 
     /// Bumped every time `sampleSize`'s `didSet` actually clamps a value
     /// (not on every write -- only when the typed value was out of
-    /// range). `SampleBuilderView` reads this to force its `TextField`
+    /// range). `SampleSettingsView` reads this to force its `TextField`
     /// to rebuild.
     ///
     /// Why that's needed: confirmed by hand in the running app that
