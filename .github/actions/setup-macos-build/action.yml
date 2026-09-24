@@ -1,0 +1,29 @@
+name: Set up the macOS build
+description: Select the pinned Xcode and install xcodegen, just and create-dmg.
+
+runs:
+  using: composite
+  steps:
+    - name: Select Xcode
+      shell: bash
+      env:
+        DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+      run: |
+        set -euo pipefail
+        test -d "$DEVELOPER_DIR" || {
+          echo "pinned Xcode is not present on this image: $DEVELOPER_DIR" >&2
+          echo "available:" >&2
+          ls -d /Applications/Xcode*.app >&2
+          exit 1
+        }
+        sudo xcode-select -s "$DEVELOPER_DIR"
+        xcodebuild -version
+
+    - name: Install build tools
+      shell: bash
+      run: |
+        set -euo pipefail
+        brew install xcodegen just create-dmg
+        xcodegen --version
+        just --version
+        create-dmg --version
