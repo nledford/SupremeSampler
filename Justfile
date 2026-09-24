@@ -155,6 +155,13 @@ release version:
     case "$version" in
         *[!0-9.]*|.*|*.) echo "not a version: $version" >&2; exit 2 ;;
     esac
+    # Reject leading zeros (00.2.0): semver forbids them, and sort -V treats
+    # them as equal to the unpadded form, so they would slip past the ordering
+    # guard below.
+    if printf '%s' "$version" | grep -Eq '(^|\.)0[0-9]'; then
+        echo "not a version: $version (leading zeros)" >&2
+        exit 2
+    fi
     IFS=. read -r major minor patch extra <<< "$version"
     if [ -n "${extra:-}" ] || [ -z "${major:-}" ] || [ -z "${minor:-}" ] || [ -z "${patch:-}" ]; then
         echo "not a version: $version (want X.Y.Z)" >&2
@@ -171,11 +178,19 @@ release version:
     case "$build" in
         *[!0-9]*|"") echo "CURRENT_PROJECT_VERSION is not an integer: $build" >&2; exit 1 ;;
     esac
+    # 10# forces base 10: a leading-zero build number (08) is invalid octal and
+    # would otherwise abort the arithmetic, silently skipping the bump.
+    next_build=$((10#$build + 1))
     test "$version" != "$current" || { echo "v$version is already the current version" >&2; exit 1; }
     printf '%s\n' "$current" "$version" | sort -V -C || { echo "v$version is not greater than v$current" >&2; exit 1; }
-    sed -i '' "s/^\([[:space:]]*MARKETING_VERSION: \).*/\1\"$version\"/" project.yml
-    sed -i '' "s/^\([[:space:]]*CURRENT_PROJECT_VERSION: \).*/\1\"$((build + 1))\"/" project.yml
-    git diff --quiet project.yml && { echo "project.yml was not rewritten; check its indentation" >&2; exit 1; }
+    sed -i '' "s/^\([[:space:]]*MARKETING_VERSION:[[:space:]]*\).*/\1\"$version\"/" project.yml
+    sed -i '' "s/^\([[:space:]]*CURRENT_PROJECT_VERSION:[[:space:]]*\).*/\1\"$next_build\"/" project.yml
+    # Verify both rewrites landed: a sed pattern that misses one line would
+    # otherwise leave the tag and MARKETING_VERSION disagreeing.
+    test "$(awk -F'"' '/^[[:space:]]*MARKETING_VERSION:/{print $2}' project.yml)" = "$version" \
+        || { echo "MARKETING_VERSION was not rewritten to $version; check project.yml" >&2; exit 1; }
+    test "$(awk -F'"' '/^[[:space:]]*CURRENT_PROJECT_VERSION:/{print $2}' project.yml)" = "$next_build" \
+        || { echo "CURRENT_PROJECT_VERSION was not rewritten to $next_build; check project.yml" >&2; exit 1; }
     git add project.yml
     git commit -m "Release v$version"
     git tag "v$version"
