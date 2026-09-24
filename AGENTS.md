@@ -558,6 +558,65 @@ Run `just` for the full list. Common ones:
 - `just build` / `just run` / `just test`
 - `just generate` — regenerate `SupremeSampler.xcodeproj` from `project.yml`
 - `just xcode` — regenerate, then open in Xcode
+- `just dmg` / `just dmg-headless` — package the DMG (see Releases and CI)
+- `just release X.Y.Z` — bump, commit, tag and push a release
+
+## Releases and CI
+
+Three workflows under `.github/workflows/`:
+
+- `build-app.yml` — reusable (`workflow_call`); the single definition of how a
+  release artifact is produced. Checks out, runs the composite setup action,
+  optionally checks the tag, runs `just dmg-headless`, writes `SHA256SUMS`, and
+  uploads the DMG + checksums as an artifact.
+- `ci.yml` — on PRs and pushes to `main`: a `test` job (`just test`) and a
+  `build` job that calls `build-app.yml`. The `build` job exists because
+  `just test` builds Debug only, so a Release-only breakage would otherwise
+  first surface during a release.
+- `release.yml` — on `v*` tag pushes and `workflow_dispatch`. Calls
+  `build-app.yml` with the tag, then (tag pushes only) publishes a GitHub
+  Release with the DMG and `SHA256SUMS`. `workflow_dispatch` is the dry run:
+  it builds and uploads artifacts but does not publish.
+
+`.github/actions/setup-macos-build/action.yml` is a composite action that pins
+Xcode (`DEVELOPER_DIR=/Applications/Xcode_26.6.app/...`, failing loudly if the
+image drops it) and installs `xcodegen`, `just` and `create-dmg`.
+
+**`project.yml` is the single version source.** `MARKETING_VERSION` is the
+version; the git tag is `v<MARKETING_VERSION>` and is a *check*, not an input.
+`scripts/release-version.sh check <tag>` (wrapped by `just release-check`) fails
+if they disagree; `build-app.yml` runs it before building. `just release X.Y.Z`
+does the bump/commit/tag/push and refuses a dirty tree, a non-`main` branch, an
+existing local or remote tag, a malformed version, and a non-integer
+`CURRENT_PROJECT_VERSION`. Prereleases are tagged by hand (the recipe accepts
+only `X.Y.Z`); the release workflow accepts a prerelease tag whose *core*
+matches `MARKETING_VERSION` and marks the release `--prerelease`.
+
+**GRDB is pinned with `exactVersion: 7.11.1`** in `project.yml`, because
+`Package.resolved` lives inside the gitignored `SupremeSampler.xcodeproj/` and
+is re-resolved on every `xcodegen generate` — without the pin a released DMG
+would not be reproducible from its tag. Do not add `Package.resolved` to git:
+git will not descend into an excluded directory to re-include a file.
+
+**The DMG is built with `--skip-jenkins` in CI.** `create-dmg`'s Finder
+AppleScript needs a GUI session and is unreliable on runners. `just dmg` takes
+no argument (cosmetic, for humans); `just dmg-headless` is the CI variant. Both
+are thin wrappers over the private `_dmg headless` recipe, which adds
+`--skip-jenkins` when `headless` is `"true"`. The `/Applications` symlink is
+created before the AppleScript step, so the headless image is still functional —
+it only loses icon positions and background.
+
+**The app is ad-hoc signed, not notarized**, so releases carry the quarantine
+instruction (right-click → Open, or `xattr -cr`). No Developer ID, no
+notarization, no repository secrets anywhere in the pipeline.
+
+**`WindowLayoutTests` on a hosted runner.** `AGENTS.md` records that this test
+needs a window genuinely on screen. If the `test` job fails or hangs on
+`macos-26`, first move *only* the `test` job to `macos-15-intel` (Intel runners
+have a static UDID and are the documented workaround for GUI-session problems),
+keeping `build` and `publish` on `macos-26`. If it still fails, add `XCTSkipIf`
+on a `CI` environment check to the window-dependent tests only and record the
+gap here. Never delete the test: it guards a real AppKit crash.
 
 ## Related repos and docs
 
