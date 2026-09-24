@@ -33,6 +33,12 @@ jobs:
           name: dmg
           path: dist
 
+      - name: Verify the checksums against the downloaded DMG
+        run: |
+          set -euo pipefail
+          cd dist
+          shasum -a 256 -c SHA256SUMS
+
       - name: Refuse to overwrite an existing release
         env:
           GH_TOKEN: ${{ github.token }}
