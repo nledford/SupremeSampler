@@ -103,4 +103,5 @@ before changing query or script-generation code.
 
 ## License
 
-No license has been chosen yet.
+[MIT](LICENSE). Photo Supreme and IDimager are the property of their
+owners; this project isn't affiliated with or endorsed by them.
