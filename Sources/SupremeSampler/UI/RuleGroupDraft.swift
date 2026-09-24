@@ -66,15 +66,14 @@ struct KeywordRuleDraft: Equatable {
     var selectedGUIDs: Set<String> = []
     var text: String = ""
 
-    func domainRule(resolvingCategoriesIn tree: [CatalogPropNode]) -> FilterRule {
-        let branches = { CategoryBranch.resolve(selectedGUIDs: selectedGUIDs, in: tree) }
-        func path(_ kind: KeywordPathMatchKind, negated: Bool = false) -> FilterRule {
-            .keywordPath(KeywordPathFilter(kind: kind, text: text, negated: negated))
+    /// The path test this rule makes, or `nil` when it tests picked
+    /// keywords instead.
+    var keywordPathFilter: KeywordPathFilter? {
+        func path(_ kind: KeywordPathMatchKind, negated: Bool = false) -> KeywordPathFilter {
+            KeywordPathFilter(kind: kind, text: text, negated: negated)
         }
         switch `operator` {
-        case .isAnyOf: return .category(CategoryFilter(branches: branches(), mode: .any))
-        case .isAllOf: return .category(CategoryFilter(branches: branches(), mode: .all))
-        case .isNoneOf: return .category(CategoryFilter(branches: branches(), mode: .none))
+        case .isAnyOf, .isAllOf, .isNoneOf: return nil
         case .contains: return path(.contains)
         case .doesNotContain: return path(.contains, negated: true)
         case .hasPart: return path(.hasPart)
@@ -83,6 +82,16 @@ struct KeywordRuleDraft: Equatable {
         case .doesNotStartWith: return path(.startsWith, negated: true)
         case .endsWith: return path(.endsWith)
         case .doesNotEndWith: return path(.endsWith, negated: true)
+        }
+    }
+
+    func domainRule(resolvingCategoriesIn tree: [CatalogPropNode]) -> FilterRule {
+        if let keywordPathFilter { return .keywordPath(keywordPathFilter) }
+        let branches = CategoryBranch.resolve(selectedGUIDs: selectedGUIDs, in: tree)
+        switch `operator` {
+        case .isAllOf: return .category(CategoryFilter(branches: branches, mode: .all))
+        case .isNoneOf: return .category(CategoryFilter(branches: branches, mode: .none))
+        default: return .category(CategoryFilter(branches: branches, mode: .any))
         }
     }
 }
@@ -234,6 +243,13 @@ struct RuleGroupDraft: Identifiable, Equatable {
     /// in place -- the Swift spelling of Rust's `&mut self`.
     mutating func add(_ field: RuleField) {
         rules.append(RuleDraft(field.defaultContent))
+    }
+
+    /// What the group header's "+" adds: the same field as the group's
+    /// last rule (skipping nested groups), else Rating -- a row's "+"
+    /// likewise repeats its own row's field.
+    var fieldForNewRule: RuleField {
+        rules.last(where: { $0.field != nil })?.field ?? .rating
     }
 
     /// Appends an empty "all of" group.

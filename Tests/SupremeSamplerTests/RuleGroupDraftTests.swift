@@ -383,4 +383,34 @@ final class RuleGroupDraftTests: XCTestCase {
 
         XCTAssertEqual(draft, before)
     }
+
+    // MARK: - The group header's "+"
+
+    func test_givenAnEmptyGroup_whenAskingWhatANewRuleTests_thenItIsRating() {
+        XCTAssertEqual(RuleGroupDraft().fieldForNewRule, .rating)
+    }
+
+    func test_givenAGroupEndingInAKeywordRule_whenAskingWhatANewRuleTests_thenItIsKeyword() {
+        var draft = RuleGroupDraft()
+        draft.add(.path)
+        draft.addGroup()
+        draft.add(.keyword)
+
+        XCTAssertEqual(draft.fieldForNewRule, .keyword)
+    }
+
+    func test_givenAGroupEndingInANestedGroup_whenAskingWhatANewRuleTests_thenTheLastRuleDecides() {
+        var draft = RuleGroupDraft()
+        draft.add(.path)
+        draft.addGroup()
+
+        XCTAssertEqual(draft.fieldForNewRule, .path)
+    }
+
+    func test_givenAKeywordRule_whenAskingForItsPathFilter_thenOnlyPathOperatorsHaveOne() {
+        XCTAssertNil(KeywordRuleDraft(operator: .isAllOf, text: "Pines").keywordPathFilter)
+        XCTAssertEqual(
+            KeywordRuleDraft(operator: .hasNoPart, text: "Pines").keywordPathFilter,
+            KeywordPathFilter(kind: .hasPart, text: "Pines", negated: true))
+    }
 }

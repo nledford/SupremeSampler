@@ -172,6 +172,7 @@ final class ViewRenderingTests: XCTestCase {
             .rating(RatingRuleDraft()),
             .keyword(KeywordRuleDraft()),
             .keyword(KeywordRuleDraft(operator: .isAllOf, selectedGUIDs: ["prop-pines"])),
+            .keyword(KeywordRuleDraft(operator: .hasNoPart, text: "Pines")),
             .path(PathRuleDraft()),
             .label(LabelRuleDraft()),
             .fileType(FileTypeRuleDraft()),
@@ -179,59 +180,73 @@ final class ViewRenderingTests: XCTestCase {
             .pendingDeletion(PendingDeletionRuleDraft()),
             .group(RuleGroupDraft(match: .none, rules: [RuleDraft(.rating(RatingRuleDraft()))])),
         ] {
-            _ = RuleRow(rule: .constant(RuleDraft(content)), propTree: nestedTree, depth: 1, onRemove: {}).body
+            _ = RuleRow(rule: .constant(RuleDraft(content)), propTree: nestedTree, depth: 1, actions: .none).body
         }
     }
 
-    func test_givenAKeywordRule_whenBuildingItsRow_thenBothEmptyAndNonEmptyTreesAndPathTextRender() {
-        _ = KeywordRuleRow(rule: .constant(KeywordRuleDraft()), propTree: [], onRemove: {}).body
-        _ = KeywordRuleRow(
-            rule: .constant(KeywordRuleDraft(operator: .isNoneOf, selectedGUIDs: ["cat-nature"])),
-            propTree: nestedTree,
-            onRemove: {}
+    func test_givenAKeywordRule_whenBuildingItsControls_thenBothEmptyAndNonEmptyTreesAndPathTextRender() {
+        _ = KeywordRuleControls(rule: .constant(KeywordRuleDraft()), propTree: []).body
+        _ = KeywordRuleControls(
+            rule: .constant(KeywordRuleDraft(operator: .isNoneOf, selectedGUIDs: ["cat-nature"])), propTree: nestedTree
         ).body
-        _ = KeywordRuleRow(
-            rule: .constant(KeywordRuleDraft(operator: .hasPart, text: "Pines")), propTree: nestedTree, onRemove: {}
-        ).body
+        _ = KeywordRuleControls(rule: .constant(KeywordRuleDraft(operator: .hasPart, text: "Pines")), propTree: nestedTree)
+            .body
+        _ = KeywordRuleControls(rule: .constant(KeywordRuleDraft(operator: .hasPart, text: "")), propTree: nestedTree)
+            .body
     }
 
-    func test_givenAPathRule_whenBuildingItsRow_thenEachKindRenders() {
+    func test_givenAKeywordTreeAndPicks_whenBuildingThePickerPopover_thenBodyDoesNotCrash() {
+        _ = KeywordTreePicker(propTree: [], selection: .constant([])).body
+        _ = KeywordTreePicker(propTree: nestedTree, selection: .constant(["prop-pines"])).body
+    }
+
+    func test_givenMatchingKeywords_whenBuildingTheMatchesList_thenBodyDoesNotCrash() {
+        _ = KeywordMatchesList(paths: []).body
+        _ = KeywordMatchesList(paths: KeywordPath.all(in: nestedTree)).body
+    }
+
+    func test_givenAPathRule_whenBuildingItsControls_thenEachKindRenders() {
         for pathOperator in PathOperator.allCases {
-            _ = PathRuleRow(rule: .constant(PathRuleDraft(operator: pathOperator, text: "/2019/")), onRemove: {}).body
+            _ = PathRuleControls(rule: .constant(PathRuleDraft(operator: pathOperator, text: "/2019/"))).body
         }
     }
 
-    func test_givenALabelRule_whenBuildingItsRow_thenEachLoadStateRenders() {
+    func test_givenALabelRule_whenBuildingItsControls_thenEachLoadStateRenders() {
         let loaded = CatalogValues.loaded([ValueCount(value: "", count: 3), ValueCount(value: "選択", count: 1)])
         for values in [CatalogValues.loading, loaded, .failed("no idLabel column")] {
-            _ = LabelRuleRow(
-                rule: .constant(LabelRuleDraft(mode: .none, selectedLabels: [""])), labels: values, onRemove: {}
-            ).body
+            _ = LabelRuleControls(rule: .constant(LabelRuleDraft(mode: .none, selectedLabels: [""])), labels: values).body
+            _ = CatalogValuePicker(values: values, selection: .constant([""]), noun: "labels").body
         }
     }
 
-    func test_givenAFileTypeRule_whenBuildingItsRow_thenEachLoadStateRenders() {
+    func test_givenTheAddButton_whenClickedWithOrWithoutOption_thenOptionAddsANestedGroup() {
+        XCTAssertEqual(AddRuleMenu.Choice.forClick(optionHeld: false), .rule)
+        XCTAssertEqual(AddRuleMenu.Choice.forClick(optionHeld: true), .group)
+        _ = AddRuleMenu(accessibilityLabel: "Add", onAdd: { _ in }).body
+    }
+
+    func test_givenAFileTypeRule_whenBuildingItsControls_thenEachLoadStateRenders() {
         let loaded = CatalogValues.loaded([ValueCount(value: "jpg", count: 9), ValueCount(value: "", count: 1)])
         for values in [CatalogValues.loading, loaded, .failed("timeout")] {
-            _ = FileTypeRuleRow(rule: .constant(FileTypeRuleDraft()), fileTypes: values, onRemove: {}).body
+            _ = FileTypeRuleControls(rule: .constant(FileTypeRuleDraft()), fileTypes: values).body
         }
     }
 
-    func test_givenABookmarkRule_whenBuildingItsRow_thenEachLoadStateRenders() {
+    func test_givenABookmarkRule_whenBuildingItsControls_thenEachLoadStateRenders() {
         let loaded = CatalogValues.loaded([ValueCount(value: "0", count: 9), ValueCount(value: "5", count: 1)])
         for values in [CatalogValues.loading, loaded, .failed("x")] {
-            _ = BookmarkRuleRow(rule: .constant(BookmarkRuleDraft()), bookmarks: values, onRemove: {}).body
+            _ = BookmarkRuleControls(rule: .constant(BookmarkRuleDraft(selectedValues: ["5"])), bookmarks: values).body
         }
     }
 
-    func test_givenAPendingDeletionRule_whenBuildingItsRow_thenBothChoicesRender() {
+    func test_givenAPendingDeletionRule_whenBuildingItsControls_thenBothChoicesRender() {
         for isPending in [true, false] {
-            _ = PendingDeletionRuleRow(rule: .constant(PendingDeletionRuleDraft(isPending: isPending)), onRemove: {}).body
+            _ = PendingDeletionRuleControls(rule: .constant(PendingDeletionRuleDraft(isPending: isPending))).body
         }
     }
 
-    func test_givenARatingRule_whenBuildingItsRow_thenBodyDoesNotCrash() {
-        _ = RatingRuleRow(rule: .constant(RatingRuleDraft(comparison: .atMost, value: 0)), onRemove: {}).body
+    func test_givenARatingRule_whenBuildingItsControls_thenBodyDoesNotCrash() {
+        _ = RatingRuleControls(rule: .constant(RatingRuleDraft(comparison: .atMost, value: 0))).body
     }
 
     func test_givenEachFolderBalance_whenBuildingSampleBuilderView_thenBodyDoesNotCrash() {

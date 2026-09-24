@@ -1,14 +1,14 @@
+import AppKit
 import SwiftUI
 
-// The rule builder's editor, Lightroom Smart Collection style: a group
-// is a "Match [all/any/none] of" header followed by its rules, and a
-// rule can be another group, rendered indented beneath its parent.
+// The rule builder's editor, Lightroom Smart Collection style. Every rule
+// is one line -- `[Field] [operator] [value] … [− +]` -- inside a
+// bordered box per group; a nested group is a box inside its parent's,
+// headed "[All / Any / None] of the following are true".
 //
-// Every view here produces one or more *rows* of the enclosing `Form`:
-// a view whose body yields several views (a header plus a `ForEach`)
-// is flattened into consecutive rows, so a nested group simply
-// contributes more rows -- no nested scroll views or boxes. Nesting is
-// shown by leading indentation.
+// Values that are lists (picked keywords, labels, file types, bookmarks)
+// sit behind a button that summarizes the picks and opens the list in a
+// popover, so rows stay one line even in a narrow window.
 //
 // `@Binding` (used throughout) is a two-way reference to a value owned
 // somewhere else -- here, a slice of `SampleBuilderModel.rules`. It's
@@ -16,88 +16,95 @@ import SwiftUI
 // bundled into one handle: reading it reads the owner's value, writing
 // it writes the owner's value.
 
-private let indentPerLevel: CGFloat = 16
-
-/// One group: its "Match … of" header row, then a row per rule.
-/// Recursive -- a nested group's rules are drawn by another
-/// `RuleGroupEditor`, one level deeper.
+/// One group: a header row, then a row per rule, all in one box.
+/// Recursive -- a nested group is drawn by another `RuleGroupEditor`,
+/// inside its parent's box.
 struct RuleGroupEditor: View {
     @Binding var group: RuleGroupDraft
     let propTree: [CatalogPropNode]
-    /// 0 for the root group; its rules are drawn at `depth + 1`.
+    /// 0 for the root group.
     let depth: Int
     /// `nil` for the root group, which can't be removed. `(() -> Void)?`
     /// is an optional closure, like `(() => void) | undefined` in TS.
     let onRemove: (() -> Void)?
-    /// The catalog's color labels and file types, for those rules' pickers.
+    /// The catalog's color labels, file types and bookmarks, for those
+    /// rules' pickers.
     var labels: CatalogValues = .loading
     var fileTypes: CatalogValues = .loading
     var bookmarks: CatalogValues = .loading
 
     var body: some View {
-        // Kept short and on one line: the sidebar is narrow, and a row
-        // wider than it squeezes its text into a tall sliver and pushes
-        // the whole form off the left edge (seen in the running app).
-        HStack {
-            Text("Match")
-            Picker("Match", selection: $group.match) {
-                Text("all").tag(GroupMatch.all)
-                Text("any").tag(GroupMatch.any)
-                Text("none").tag(GroupMatch.none)
-            }
-            .labelsHidden()
-            .fixedSize()
-            Text("of:")
-            Spacer(minLength: 0)
-            // `Menu` is a pull-down button (a `<select>`-less dropdown of
-            // actions); each `Button` inside it is one menu item.
-            Menu {
-                Button("Rating rule") { group.add(.rating) }
-                Button("Keyword rule") { group.add(.keyword) }
-                Button("File path rule") { group.add(.path) }
-                Button("Color label rule") { group.add(.label) }
-                Button("File type rule") { group.add(.fileType) }
-                Button("Bookmark rule") { group.add(.bookmark) }
-                Button("Pending deletion rule") { group.add(.pendingDeletion) }
+        VStack(alignment: .leading, spacing: 0) {
+            header
+                .padding(8)
+
+            if group.rules.isEmpty {
                 Divider()
-                Button("Nested group") { group.addGroup() }
-            } label: {
-                Image(systemName: "plus.circle")
+                Text(emptyGroupHint)
+                    .foregroundStyle(.secondary)
+                    .font(.callout)
+                    .padding(8)
             }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .help("Add a rule or nested group")
-            .accessibilityLabel(depth == 0 ? "Add rule" : "Add rule to group")
+
+            // Iterates the rules by value and hands each row a binding
+            // looked up by `id` (see `binding(for:)`), rather than
+            // `ForEach($group.rules)`'s index-based bindings -- removing a
+            // row while SwiftUI still holds a binding to a now-out-of-range
+            // index is a known crash with the index-based form.
+            ForEach(group.rules) { rule in
+                Divider()
+                RuleRow(
+                    rule: binding(for: rule),
+                    propTree: propTree,
+                    depth: depth,
+                    actions: actions(for: rule),
+                    labels: labels,
+                    fileTypes: fileTypes,
+                    bookmarks: bookmarks
+                )
+                .padding(8)
+            }
+        }
+        .ruleBox()
+    }
+
+    /// Kept short and on one line: an over-wide row squeezes its text
+    /// into a tall sliver (seen in the running app, 2026-09-23).
+    @ViewBuilder
+    private var header: some View {
+        HStack(spacing: 8) {
+            if depth == 0 {
+                Text("Match")
+                matchPicker(all: "all", any: "any", none: "none")
+                Text("of the following rules:")
+            } else {
+                matchPicker(
+                    all: "All of the following are true",
+                    any: "Any of the following are true",
+                    none: "None of the following are true")
+            }
+            Spacer(minLength: 0)
             if let onRemove {
                 RemoveRuleButton(accessibilityLabel: "Remove group", action: onRemove)
             }
+            // The header's "+" appends inside this group.
+            AddRuleMenu(accessibilityLabel: depth == 0 ? "Add rule" : "Add rule to group") { choice in
+                switch choice {
+                case .rule: group.add(group.fieldForNewRule)
+                case .group: group.addGroup()
+                }
+            }
         }
-        .padding(.leading, CGFloat(depth) * indentPerLevel)
+    }
 
-        if group.rules.isEmpty {
-            Text(emptyGroupHint)
-                .foregroundStyle(.secondary)
-                .font(.callout)
-                .padding(.leading, CGFloat(depth + 1) * indentPerLevel)
+    private func matchPicker(all: String, any: String, none: String) -> some View {
+        Picker("Match", selection: $group.match) {
+            Text(all).tag(GroupMatch.all)
+            Text(any).tag(GroupMatch.any)
+            Text(none).tag(GroupMatch.none)
         }
-
-        // Iterates the rules by value and hands each row a binding
-        // looked up by `id` (see `binding(for:)`), rather than
-        // `ForEach($group.rules)`'s index-based bindings -- removing a
-        // row while SwiftUI still holds a binding to a now-out-of-range
-        // index is a known crash with the index-based form.
-        ForEach(group.rules) { rule in
-            RuleRow(
-                rule: binding(for: rule),
-                propTree: propTree,
-                depth: depth + 1,
-                onRemove: { group.removeRule(id: rule.id) },
-                labels: labels,
-                fileTypes: fileTypes,
-                bookmarks: bookmarks
-            )
-        }
+        .labelsHidden()
+        .fixedSize()
     }
 
     /// Spells out the vacuous case, since "matches everything" vs.
@@ -107,6 +114,21 @@ struct RuleGroupEditor: View {
         case .all, .none: return "No rules yet — matches every photo."
         case .any: return "No rules yet — matches no photos."
         }
+    }
+
+    /// What a row's own controls do to this group. Each closure finds the
+    /// row by `id` when it runs, so it stays right after edits elsewhere.
+    private func actions(for rule: RuleDraft) -> RuleRowActions {
+        RuleRowActions(
+            changeField: { group.changeField(ofRule: rule.id, to: $0) },
+            remove: { group.removeRule(id: rule.id) },
+            add: { choice in
+                switch choice {
+                case .rule: group.insertRule(rule.field ?? group.fieldForNewRule, after: rule.id)
+                case .group: group.insertGroup(after: rule.id)
+                }
+            }
+        )
     }
 
     /// A `Binding` built by hand from a getter/setter pair -- like
@@ -125,321 +147,361 @@ struct RuleGroupEditor: View {
     }
 }
 
-/// Dispatches one rule to the row for its kind.
+/// What a rule row's field picker, "−" and "+" do. A plain struct of
+/// closures, like passing an object of callbacks as a React prop.
+struct RuleRowActions {
+    var changeField: (RuleField) -> Void
+    var remove: () -> Void
+    var add: (AddRuleMenu.Choice) -> Void
+
+    /// Does nothing -- for previews and tests.
+    static let none = RuleRowActions(changeField: { _ in }, remove: {}, add: { _ in })
+}
+
+/// One rule: `[Field] [operator] [value] … [− +]`, or a nested group.
 struct RuleRow: View {
     @Binding var rule: RuleDraft
     let propTree: [CatalogPropNode]
+    /// The depth of the group this row is in.
     let depth: Int
-    let onRemove: () -> Void
+    let actions: RuleRowActions
     var labels: CatalogValues = .loading
     var fileTypes: CatalogValues = .loading
     var bookmarks: CatalogValues = .loading
 
     var body: some View {
-        // `switch` over an enum with payloads, like Rust's `match`; each
-        // case unwraps the payload and builds a binding that writes an
-        // edited payload back into the same enum case.
-        switch rule.content {
-        case .rating(let rating):
-            RatingRuleRow(
-                rule: Binding(
-                    get: {
-                        if case .rating(let current) = rule.content { return current }
-                        return rating
-                    },
-                    set: { rule.content = .rating($0) }
-                ),
-                onRemove: onRemove
-            )
-            .padding(.leading, CGFloat(depth) * indentPerLevel)
-        case .keyword(let keyword):
-            KeywordRuleRow(
-                rule: Binding(
-                    get: {
-                        if case .keyword(let current) = rule.content { return current }
-                        return keyword
-                    },
-                    set: { rule.content = .keyword($0) }
-                ),
-                propTree: propTree,
-                onRemove: onRemove
-            )
-            .padding(.leading, CGFloat(depth) * indentPerLevel)
-        case .path(let path):
-            PathRuleRow(
-                rule: Binding(
-                    get: {
-                        if case .path(let current) = rule.content { return current }
-                        return path
-                    },
-                    set: { rule.content = .path($0) }
-                ),
-                onRemove: onRemove
-            )
-            .padding(.leading, CGFloat(depth) * indentPerLevel)
-        case .label(let label):
-            LabelRuleRow(
-                rule: Binding(
-                    get: {
-                        if case .label(let current) = rule.content { return current }
-                        return label
-                    },
-                    set: { rule.content = .label($0) }
-                ),
-                labels: labels,
-                onRemove: onRemove
-            )
-            .padding(.leading, CGFloat(depth) * indentPerLevel)
-        case .fileType(let fileType):
-            FileTypeRuleRow(
-                rule: Binding(
-                    get: {
-                        if case .fileType(let current) = rule.content { return current }
-                        return fileType
-                    },
-                    set: { rule.content = .fileType($0) }
-                ),
-                fileTypes: fileTypes,
-                onRemove: onRemove
-            )
-            .padding(.leading, CGFloat(depth) * indentPerLevel)
-        case .bookmark(let bookmark):
-            BookmarkRuleRow(
-                rule: Binding(
-                    get: {
-                        if case .bookmark(let current) = rule.content { return current }
-                        return bookmark
-                    },
-                    set: { rule.content = .bookmark($0) }
-                ),
-                bookmarks: bookmarks,
-                onRemove: onRemove
-            )
-            .padding(.leading, CGFloat(depth) * indentPerLevel)
-        case .pendingDeletion(let deletion):
-            PendingDeletionRuleRow(
-                rule: Binding(
-                    get: {
-                        if case .pendingDeletion(let current) = rule.content { return current }
-                        return deletion
-                    },
-                    set: { rule.content = .pendingDeletion($0) }
-                ),
-                onRemove: onRemove
-            )
-            .padding(.leading, CGFloat(depth) * indentPerLevel)
-        case .group(let group):
+        if case .group(let group) = rule.content {
             RuleGroupEditor(
-                group: Binding(
-                    get: {
-                        if case .group(let current) = rule.content { return current }
-                        return group
-                    },
-                    set: { rule.content = .group($0) }
-                ),
+                group: payload(fallback: group, { if case .group(let g) = $0 { return g }; return nil }, RuleDraft.Content.group),
                 propTree: propTree,
-                depth: depth,
-                onRemove: onRemove,
+                depth: depth + 1,
+                onRemove: actions.remove,
                 labels: labels,
                 fileTypes: fileTypes,
                 bookmarks: bookmarks
             )
-        }
-    }
-}
-
-/// "Rating [is / is at least / is at most] [n] stars".
-struct RatingRuleRow: View {
-    @Binding var rule: RatingRuleDraft
-    let onRemove: () -> Void
-
-    var body: some View {
-        HStack {
-            Text("Rating")
-            Picker("Comparison", selection: $rule.comparison) {
-                ForEach(RatingComparisonKind.allCases) { kind in
-                    Text(kind.rawValue).tag(kind)
-                }
-            }
-            .labelsHidden()
-            .fixedSize()
-            Stepper("\(rule.value) star\(rule.value == 1 ? "" : "s")", value: $rule.value, in: 0...5)
-            Spacer()
-            RemoveRuleButton(accessibilityLabel: "Remove rating rule", action: onRemove)
-        }
-    }
-}
-
-/// "Keyword [operator]" plus, for the picked-keyword operators, the
-/// category tree to pick from (a node includes its subcategories, see
-/// `CategoryBranch`), or, for the path operators, the text to match.
-struct KeywordRuleRow: View {
-    @Binding var rule: KeywordRuleDraft
-    let propTree: [CatalogPropNode]
-    let onRemove: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text("Keyword")
-                Picker("Match", selection: $rule.operator) {
-                    ForEach(KeywordOperator.allCases) { keywordOperator in
-                        Text(keywordOperator.rawValue).tag(keywordOperator)
+        } else if let field = rule.field {
+            HStack(spacing: 8) {
+                Picker("Field", selection: Binding(get: { field }, set: actions.changeField)) {
+                    ForEach(RuleField.allCases) { field in
+                        Text(field.rawValue).tag(field)
                     }
                 }
                 .labelsHidden()
                 .fixedSize()
-                if !rule.operator.picksKeywords {
-                    TextField("Keyword path text", text: $rule.text, prompt: Text("Nature\\Trees"))
-                        .labelsHidden()
-                        .textFieldStyle(.roundedBorder)
-                }
-                Spacer()
-                RemoveRuleButton(accessibilityLabel: "Remove keyword rule", action: onRemove)
-            }
 
-            if rule.operator.picksKeywords {
-                if propTree.isEmpty {
-                    Text("No categories in this catalog.")
-                        .foregroundStyle(.secondary)
-                } else {
-                    // `children: \.childrenOrNil` makes this a real outline
-                    // view (disclosure triangles); `selection:` gives native
-                    // cmd/shift-click multi-select on macOS.
-                    List(propTree, children: \.childrenOrNil, selection: $rule.selectedGUIDs) { node in
-                        Text(node.name)
-                    }
-                    .frame(height: 180)
-                    Text("\(rule.selectedGUIDs.count) selected, including their subcategories")
-                        .foregroundStyle(.secondary)
-                        .font(.caption)
-                }
+                controls
+                    // A new field is a new set of controls: without this,
+                    // SwiftUI could keep one field's typed-but-unsaved text
+                    // (view `@State`) for the next field in the same spot.
+                    .id(field)
+
+                Spacer(minLength: 0)
+                RemoveRuleButton(accessibilityLabel: "Remove \(field.rawValue.lowercased()) rule", action: actions.remove)
+                AddRuleMenu(accessibilityLabel: "Add rule after this one", onAdd: actions.add)
             }
         }
     }
+
+    /// The operator and value controls for this row's field. `@ViewBuilder`
+    /// lets a computed property return different view types per branch,
+    /// like a JSX expression with a `switch` in it.
+    @ViewBuilder
+    private var controls: some View {
+        switch rule.content {
+        case .rating(let rating):
+            RatingRuleControls(
+                rule: payload(fallback: rating, { if case .rating(let r) = $0 { return r }; return nil }, RuleDraft.Content.rating))
+        case .keyword(let keyword):
+            KeywordRuleControls(
+                rule: payload(fallback: keyword, { if case .keyword(let k) = $0 { return k }; return nil }, RuleDraft.Content.keyword),
+                propTree: propTree)
+        case .path(let path):
+            PathRuleControls(
+                rule: payload(fallback: path, { if case .path(let p) = $0 { return p }; return nil }, RuleDraft.Content.path))
+        case .label(let label):
+            LabelRuleControls(
+                rule: payload(fallback: label, { if case .label(let l) = $0 { return l }; return nil }, RuleDraft.Content.label),
+                labels: labels)
+        case .fileType(let fileType):
+            FileTypeRuleControls(
+                rule: payload(
+                    fallback: fileType, { if case .fileType(let f) = $0 { return f }; return nil }, RuleDraft.Content.fileType),
+                fileTypes: fileTypes)
+        case .bookmark(let bookmark):
+            BookmarkRuleControls(
+                rule: payload(
+                    fallback: bookmark, { if case .bookmark(let b) = $0 { return b }; return nil }, RuleDraft.Content.bookmark),
+                bookmarks: bookmarks)
+        case .pendingDeletion(let deletion):
+            PendingDeletionRuleControls(
+                rule: payload(
+                    fallback: deletion, { if case .pendingDeletion(let d) = $0 { return d }; return nil },
+                    RuleDraft.Content.pendingDeletion))
+        case .group:
+            EmptyView()
+        }
+    }
+
+    /// A binding to one case's payload inside `rule.content`: reads it
+    /// out with `extract` (or the last-seen `fallback` if the case has
+    /// since changed), writes an edit back with `embed`. `<Payload>` is a
+    /// generic parameter, like Rust's `fn payload<P>(...)`; an enum case
+    /// such as `RuleDraft.Content.rating` doubles as its constructor
+    /// function, which is what `embed` receives.
+    private func payload<Payload>(
+        fallback: Payload, _ extract: @escaping (RuleDraft.Content) -> Payload?,
+        _ embed: @escaping (Payload) -> RuleDraft.Content
+    ) -> Binding<Payload> {
+        Binding(
+            get: { extract(rule.content) ?? fallback },
+            set: { rule.content = embed($0) }
+        )
+    }
 }
 
-/// "Path [starts with / ends with / contains] [text]", matched against
-/// the photo's full path (folder plus file name).
-struct PathRuleRow: View {
-    @Binding var rule: PathRuleDraft
-    let onRemove: () -> Void
+/// "[is / is at least / …] [n stars]".
+struct RatingRuleControls: View {
+    @Binding var rule: RatingRuleDraft
 
-    /// What's in the text field right now, applied to `rule` only after
-    /// typing pauses: every change re-runs the live count, and a path
-    /// count scans every photo (~2s on the real catalog), so updating per
-    /// keystroke would stack up queries. `@State` is view-owned storage
-    /// that survives re-renders -- like `useState` in React.
+    var body: some View {
+        Picker("Comparison", selection: $rule.comparison) {
+            ForEach(RatingComparisonKind.allCases) { kind in
+                Text(kind.rawValue).tag(kind)
+            }
+        }
+        .labelsHidden()
+        .fixedSize()
+        Stepper("\(rule.value) star\(rule.value == 1 ? "" : "s")", value: $rule.value, in: 0...5)
+            .fixedSize()
+    }
+}
+
+/// "[is any of …] [picked keywords ▾]" or "[has a part named …] [text]
+/// [N keywords]". Picking a keyword includes its subcategories (see
+/// `CategoryBranch`); path text is matched as `KeywordPathFilter` says.
+struct KeywordRuleControls: View {
+    @Binding var rule: KeywordRuleDraft
+    let propTree: [CatalogPropNode]
+
+    /// What's in the text field right now; `rule.text` catches up once
+    /// typing pauses (see `DebouncedTextField`). The keyword hint follows
+    /// this, not `rule.text`, so it updates as you type. `@State` is
+    /// view-owned storage that survives re-renders -- like `useState` in
+    /// React.
     @State private var typedText: String
 
-    init(rule: Binding<PathRuleDraft>, onRemove: @escaping () -> Void) {
+    init(rule: Binding<KeywordRuleDraft>, propTree: [CatalogPropNode]) {
         _rule = rule
-        self.onRemove = onRemove
+        self.propTree = propTree
         _typedText = State(initialValue: rule.wrappedValue.text)
     }
 
     var body: some View {
-        HStack {
-            Text("Path")
-            Picker("Match", selection: $rule.operator) {
-                ForEach(PathOperator.allCases) { pathOperator in
-                    Text(pathOperator.rawValue).tag(pathOperator)
-                }
+        Picker("Match", selection: $rule.operator) {
+            ForEach(KeywordOperator.allCases) { keywordOperator in
+                Text(keywordOperator.rawValue).tag(keywordOperator)
             }
-            .labelsHidden()
-            .fixedSize()
-            TextField("Path text", text: $typedText, prompt: Text("/travel/"))
-                .labelsHidden()
-                .textFieldStyle(.roundedBorder)
-                .help("Matched against the full path, folder and file name. Case doesn't matter for A–Z.")
-                // `.task(id:)` restarts whenever `typedText` changes and
-                // cancels the previous run -- so the sleep below is a
-                // debounce, like clearing and resetting a `setTimeout`.
-                .task(id: typedText) {
-                    guard typedText != rule.text else { return }
-                    try? await Task.sleep(for: .milliseconds(400))
-                    guard !Task.isCancelled else { return }
-                    rule.text = typedText
+        }
+        .labelsHidden()
+        .fixedSize()
+
+        if rule.operator.picksKeywords {
+            ValuePickerButton(
+                summary: ValueSummary.text(for: ValueSummary.keywordNames(for: rule.selectedGUIDs, in: propTree)),
+                accessibilityLabel: "Keywords"
+            ) {
+                KeywordTreePicker(propTree: propTree, selection: $rule.selectedGUIDs)
+            }
+        } else {
+            DebouncedTextField(
+                title: "Keyword path text", prompt: "Nature\\Trees", text: $rule.text, typedText: $typedText,
+                help: "A keyword's path is its categories and name joined by \\, like Nature\\Trees\\Oak. "
+                    + "Case doesn't matter for A–Z.")
+            if let hint = liveHint {
+                KeywordMatchesButton(paths: hint)
+            }
+        }
+    }
+
+    /// The keywords the typed text matches right now, or `nil` with
+    /// nothing typed.
+    private var liveHint: [KeywordPath]? {
+        var live = rule
+        live.text = typedText
+        guard !typedText.isEmpty, let filter = live.keywordPathFilter else { return nil }
+        return filter.matchingKeywordPaths(in: KeywordPath.all(in: propTree))
+    }
+}
+
+/// The category tree as a multi-select outline, for a popover.
+struct KeywordTreePicker: View {
+    let propTree: [CatalogPropNode]
+    @Binding var selection: Set<String>
+
+    var body: some View {
+        if propTree.isEmpty {
+            Text("No categories in this catalog.")
+                .foregroundStyle(.secondary)
+        } else {
+            VStack(alignment: .leading, spacing: 6) {
+                // `children: \.childrenOrNil` makes this a real outline
+                // view (disclosure triangles); `selection:` gives native
+                // cmd/shift-click multi-select on macOS.
+                List(propTree, children: \.childrenOrNil, selection: $selection) { node in
+                    Text(node.name)
                 }
-            RemoveRuleButton(accessibilityLabel: "Remove path rule", action: onRemove)
+                .frame(height: 300)
+                Text("\(selection.count) selected, including their subcategories")
+                    .foregroundStyle(.secondary)
+                    .font(.caption)
+            }
         }
     }
 }
 
-/// "Label [is any of / is none of]" plus the catalog's labels to pick
-/// from, each with its photo count. Shown exactly as stored -- the real
-/// catalog mixes languages and imported values, and which ones mean the
-/// same thing is the user's call, not the app's.
-struct LabelRuleRow: View {
+/// "N keywords" after a keyword path text; click for their paths.
+struct KeywordMatchesButton: View {
+    let paths: [KeywordPath]
+    @State private var isShowingList = false
+
+    var body: some View {
+        Button("\(paths.count) keyword\(paths.count == 1 ? "" : "s")") { isShowingList = true }
+            .buttonStyle(.link)
+            .fixedSize()
+            .help("Keywords whose path matches the text")
+            // `.popover` shows a floating panel anchored to this view
+            // while the bound flag is true -- like a controlled
+            // `<Popover open={…}>` component in React.
+            .popover(isPresented: $isShowingList, arrowEdge: .bottom) {
+                KeywordMatchesList(paths: paths)
+                    .padding()
+                    .frame(width: 320)
+            }
+    }
+}
+
+/// The paths a keyword path text matches.
+struct KeywordMatchesList: View {
+    let paths: [KeywordPath]
+
+    var body: some View {
+        if paths.isEmpty {
+            Text("No keyword path matches this text.")
+                .foregroundStyle(.secondary)
+        } else {
+            List(paths, id: \.guid) { path in
+                Text(path.text)
+            }
+            .frame(height: 240)
+        }
+    }
+}
+
+/// "[contains / starts with / …] [text]", matched against the photo's
+/// full path (folder plus file name).
+struct PathRuleControls: View {
+    @Binding var rule: PathRuleDraft
+    @State private var typedText: String
+
+    init(rule: Binding<PathRuleDraft>) {
+        _rule = rule
+        _typedText = State(initialValue: rule.wrappedValue.text)
+    }
+
+    var body: some View {
+        Picker("Match", selection: $rule.operator) {
+            ForEach(PathOperator.allCases) { pathOperator in
+                Text(pathOperator.rawValue).tag(pathOperator)
+            }
+        }
+        .labelsHidden()
+        .fixedSize()
+        DebouncedTextField(
+            title: "Path text", prompt: "/travel/", text: $rule.text, typedText: $typedText,
+            help: "Matched against the full path, folder and file name. Case doesn't matter for A–Z.")
+    }
+}
+
+/// A text field whose value reaches `text` only after typing pauses for
+/// 0.4s: every change re-runs the live count, and some counts scan every
+/// photo (~2s for a file path), so updating per keystroke would stack up
+/// queries. The row owns `typedText` so it can react to it right away.
+struct DebouncedTextField: View {
+    let title: String
+    let prompt: String
+    @Binding var text: String
+    @Binding var typedText: String
+    let help: String
+
+    var body: some View {
+        TextField(title, text: $typedText, prompt: Text(prompt))
+            .labelsHidden()
+            .textFieldStyle(.roundedBorder)
+            .frame(minWidth: 120, idealWidth: 220, maxWidth: 280)
+            .help(help)
+            // `.task(id:)` restarts whenever `typedText` changes and
+            // cancels the previous run -- so the sleep below is a
+            // debounce, like clearing and resetting a `setTimeout`.
+            .task(id: typedText) {
+                guard typedText != text else { return }
+                try? await Task.sleep(for: .milliseconds(400))
+                guard !Task.isCancelled else { return }
+                text = typedText
+            }
+    }
+}
+
+/// "[is any of / is none of] [picked labels ▾]". Shown exactly as
+/// stored -- the real catalog mixes languages and imported values, and
+/// which ones mean the same thing is the user's call, not the app's.
+struct LabelRuleControls: View {
     @Binding var rule: LabelRuleDraft
     let labels: CatalogValues
-    let onRemove: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text("Label")
-                Picker("Match", selection: $rule.mode) {
-                    Text("is any of").tag(ValueMatchMode.any)
-                    Text("is none of").tag(ValueMatchMode.none)
-                }
-                .labelsHidden()
-                .fixedSize()
-                Spacer()
-                RemoveRuleButton(accessibilityLabel: "Remove label rule", action: onRemove)
-            }
-            CatalogValuePicker(
-                values: labels, selection: $rule.selectedLabels, noun: "labels", emptyValueName: "No label")
+        ValueModePicker(mode: $rule.mode)
+        ValuePickerButton(
+            summary: ValueSummary.text(for: labels, picked: rule.selectedLabels) { $0.isEmpty ? "No label" : $0 },
+            accessibilityLabel: "Color labels"
+        ) {
+            CatalogValuePicker(values: labels, selection: $rule.selectedLabels, noun: "labels", emptyValueName: "No label")
         }
     }
 }
 
-/// "File type [is any of / is none of]" plus the catalog's file types
-/// (last extension, lowercase) to pick from, each with its photo count.
-struct FileTypeRuleRow: View {
+/// "[is any of / is none of] [picked file types ▾]" -- the last
+/// extension, lowercase.
+struct FileTypeRuleControls: View {
     @Binding var rule: FileTypeRuleDraft
     let fileTypes: CatalogValues
-    let onRemove: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text("File type")
-                Picker("Match", selection: $rule.mode) {
-                    Text("is any of").tag(ValueMatchMode.any)
-                    Text("is none of").tag(ValueMatchMode.none)
-                }
-                .labelsHidden()
-                .fixedSize()
-                Spacer()
-                RemoveRuleButton(accessibilityLabel: "Remove file type rule", action: onRemove)
-            }
+        ValueModePicker(mode: $rule.mode)
+        ValuePickerButton(
+            summary: ValueSummary.text(for: fileTypes, picked: rule.selectedTypes) { $0.isEmpty ? "No extension" : $0 },
+            accessibilityLabel: "File types"
+        ) {
             CatalogValuePicker(
                 values: fileTypes, selection: $rule.selectedTypes, noun: "file types", emptyValueName: "No extension")
         }
     }
 }
 
-/// "Bookmark [is any of / is none of]" plus the bookmark values in use,
-/// named the way the earlier lusia tool uses them ("2 · Curated").
-struct BookmarkRuleRow: View {
+/// "[is any of / is none of] [picked bookmarks ▾]", named the way the
+/// earlier lusia tool uses them ("2 · Curated").
+struct BookmarkRuleControls: View {
     @Binding var rule: BookmarkRuleDraft
     let bookmarks: CatalogValues
-    let onRemove: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text("Bookmark")
-                Picker("Match", selection: $rule.mode) {
-                    Text("is any of").tag(ValueMatchMode.any)
-                    Text("is none of").tag(ValueMatchMode.none)
-                }
-                .labelsHidden()
-                .fixedSize()
-                Spacer()
-                RemoveRuleButton(accessibilityLabel: "Remove bookmark rule", action: onRemove)
-            }
+        ValueModePicker(mode: $rule.mode)
+        ValuePickerButton(
+            summary: ValueSummary.text(for: bookmarks, picked: rule.selectedValues) { value in
+                Int(value).map(BookmarkFilter.displayName(for:)) ?? value
+            },
+            accessibilityLabel: "Bookmarks"
+        ) {
             CatalogValuePicker(
                 values: bookmarks, selection: $rule.selectedValues, noun: "bookmarks",
                 displayName: { value in
@@ -450,25 +512,117 @@ struct BookmarkRuleRow: View {
     }
 }
 
-/// "Pending deletion [excluded / only]": photos the earlier lusia tool
-/// marked for deletion (`Rating < 0`).
-struct PendingDeletionRuleRow: View {
+/// "[excluded / only]": photos the earlier lusia tool marked for
+/// deletion (`Rating < 0`).
+struct PendingDeletionRuleControls: View {
     @Binding var rule: PendingDeletionRuleDraft
-    let onRemove: () -> Void
 
     var body: some View {
-        HStack {
-            Text("Pending deletion")
-            Picker("Pending deletion", selection: $rule.isPending) {
-                Text("excluded").tag(false)
-                Text("only").tag(true)
-            }
-            .labelsHidden()
-            .fixedSize()
-            .help("Photos marked for deletion have a negative rating.")
-            Spacer()
-            RemoveRuleButton(accessibilityLabel: "Remove pending deletion rule", action: onRemove)
+        Picker("Pending deletion", selection: $rule.isPending) {
+            Text("excluded").tag(false)
+            Text("only").tag(true)
         }
+        .labelsHidden()
+        .fixedSize()
+        .help("Photos marked for deletion have a negative rating.")
+    }
+}
+
+/// "is any of / is none of", for rules over a list of values.
+struct ValueModePicker: View {
+    @Binding var mode: ValueMatchMode
+
+    var body: some View {
+        Picker("Match", selection: $mode) {
+            Text("is any of").tag(ValueMatchMode.any)
+            Text("is none of").tag(ValueMatchMode.none)
+        }
+        .labelsHidden()
+        .fixedSize()
+    }
+}
+
+/// A button showing a summary of the picked values; click to pick in a
+/// popover. Generic over the popover's content: `<Content: View>` is a
+/// type parameter with a bound, like Rust's `<C: View>` -- any view type
+/// works, fixed per use.
+struct ValuePickerButton<Content: View>: View {
+    let summary: String
+    let accessibilityLabel: String
+    @ViewBuilder let content: () -> Content
+    @State private var isPicking = false
+
+    var body: some View {
+        Button {
+            isPicking = true
+        } label: {
+            HStack(spacing: 4) {
+                Text(summary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                Image(systemName: "chevron.down")
+                    .imageScale(.small)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: 240, alignment: .leading)
+        }
+        .fixedSize()
+        .help(accessibilityLabel)
+        .accessibilityLabel(accessibilityLabel)
+        .popover(isPresented: $isPicking, arrowEdge: .bottom) {
+            VStack(alignment: .leading, spacing: 6) {
+                content()
+            }
+            .padding()
+            .frame(width: 320)
+        }
+    }
+}
+
+/// A row's or header's "+": click to add a rule; Option-click, or the
+/// menu arrow, for a nested group (Lightroom's Option-click, plus a
+/// visible way to find it).
+struct AddRuleMenu: View {
+    enum Choice: Equatable {
+        case rule
+        case group
+
+        /// What a plain click on "+" adds.
+        static func forClick(optionHeld: Bool) -> Choice {
+            optionHeld ? .group : .rule
+        }
+    }
+
+    let accessibilityLabel: String
+    let onAdd: (Choice) -> Void
+
+    var body: some View {
+        // `Menu(content:label:primaryAction:)`: clicking the button runs
+        // `primaryAction`; the small arrow beside it opens the menu -- a
+        // split button.
+        Menu {
+            Button("Add rule") { onAdd(.rule) }
+            Button("Add nested group") { onAdd(.group) }
+        } label: {
+            Image(systemName: "plus.circle")
+        } primaryAction: {
+            // `NSEvent` is AppKit, the older macOS UI framework under
+            // SwiftUI; its class-level `modifierFlags` says which modifier
+            // keys are held right now.
+            onAdd(Choice.forClick(optionHeld: NSEvent.modifierFlags.contains(.option)))
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .help("Add a rule (Option-click for a nested group)")
+        .accessibilityLabel(accessibilityLabel)
+    }
+}
+
+extension View {
+    /// The bordered box around a group's rows.
+    func ruleBox() -> some View {
+        background(RoundedRectangle(cornerRadius: 6).fill(Color(nsColor: .controlBackgroundColor)))
+            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color(nsColor: .separatorColor)))
     }
 }
 
@@ -507,7 +661,7 @@ struct CatalogValuePicker: View {
                     Text(item.count, format: .number).foregroundStyle(.secondary).monospacedDigit()
                 }
             }
-            .frame(height: 150)
+            .frame(height: 240)
             Text("\(selection.count) selected")
                 .foregroundStyle(.secondary)
                 .font(.caption)

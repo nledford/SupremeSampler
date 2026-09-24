@@ -62,6 +62,14 @@ struct KeywordPathFilter: Equatable {
         return negated ? !anyMatches : anyMatches
     }
 
+    /// The keywords among `paths` whose path matches `text` (negation
+    /// aside) -- for showing which keywords a rule is about. None for
+    /// empty text, which ignores the rule.
+    func matchingKeywordPaths(in paths: [KeywordPath]) -> [KeywordPath] {
+        guard !text.isEmpty else { return [] }
+        return paths.filter { matches(keywordPath: $0.text) }
+    }
+
     /// `text`'s scalars with A-Z lowered and nothing else changed -- the
     /// same case folding SQLite's built-in `LIKE` does.
     private static func foldedScalars(_ text: String) -> [Unicode.Scalar] {

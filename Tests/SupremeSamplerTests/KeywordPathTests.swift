@@ -32,4 +32,8 @@ final class KeywordPathTests: XCTestCase {
     func test_givenNoCategories_whenBuildingPaths_thenThereAreNone() {
         XCTAssertEqual(KeywordPath.all(in: []), [])
     }
+
+    func test_givenANestedKeyword_whenBuildingPaths_thenItKeepsItsOwnName() {
+        XCTAssertEqual(KeywordPath.all(in: tree).first { $0.guid == "oak" }?.name, "Oak")
+    }
 }

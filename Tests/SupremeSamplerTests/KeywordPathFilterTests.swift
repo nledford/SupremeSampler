@@ -81,4 +81,20 @@ final class KeywordPathFilterTests: XCTestCase {
             }
         }
     }
+
+    // MARK: - Which keywords a text matches (the row's hint)
+
+    func test_givenKeywordPaths_whenListingMatches_thenOnlyMatchingKeywordsAreListed() {
+        let paths = [
+            KeywordPath(guid: "arm", name: "Arm", text: "Nature\\Arm"),
+            KeywordPath(guid: "charm", name: "Charm", text: "Style\\Charm"),
+        ]
+
+        XCTAssertEqual(filter(.hasPart, "arm").matchingKeywordPaths(in: paths).map(\.guid), ["arm"])
+        XCTAssertEqual(filter(.contains, "arm", negated: true).matchingKeywordPaths(in: paths).map(\.guid), ["arm", "charm"])
+    }
+
+    func test_givenEmptyText_whenListingMatches_thenNoneAreListed() {
+        XCTAssertEqual(filter(.contains, "").matchingKeywordPaths(in: [KeywordPath(guid: "a", name: "A", text: "A")]), [])
+    }
 }
