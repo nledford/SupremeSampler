@@ -3,8 +3,8 @@ import Foundation
 /// Renders a text value as a SQLite string expression made of printable
 /// ASCII only, for the SQL inside a generated script. Printable ASCII
 /// runs become ordinary quoted literals (`'` doubled, SQL's escape);
-/// anything else -- non-ASCII like "選択" or "’", or control characters
-/// -- becomes `char(code, ...)`, SQLite's built-in function that makes a
+/// anything else -- non-ASCII like "選択" or "’", control characters, or
+/// `{`/`}` -- becomes `char(code, ...)`, SQLite's built-in function that makes a
 /// string from Unicode code points. Pieces are joined with `||`, SQL's
 /// string concatenation (like `+` on strings in JS/Python).
 ///
@@ -39,7 +39,10 @@ enum SQLStringLiteral {
         // (an emoji plus its modifiers counts as one), which is the
         // wrong unit for `char()`.
         for scalar in value.unicodeScalars {
-            if (0x20...0x7E).contains(scalar.value) {
+            // `{` and `}` (123, 125) delimit Pascal comments; kept out of
+            // the script's text even inside a literal, since Script
+            // Studio's comment handling is flaky (AGENTS.md).
+            if (0x20...0x7E).contains(scalar.value) && scalar != "{" && scalar != "}" {
                 flushCodePoints()
                 asciiRun.unicodeScalars.append(scalar)
             } else {

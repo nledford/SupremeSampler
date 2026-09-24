@@ -35,14 +35,22 @@ final class SQLStringLiteralTests: XCTestCase {
         XCTAssertEqual(SQLStringLiteral.render("a\tb"), "'a' || char(9) || 'b'")
     }
 
+    /// `{` and `}` delimit Pascal comments; a generated script's SQL keeps
+    /// them out of its text even inside a literal (Script Studio's comment
+    /// handling is flaky -- AGENTS.md).
+    func test_givenCurlyBraces_whenRendering_thenTheyAreCodePointsNotLiteralText() {
+        XCTAssertEqual(SQLStringLiteral.render("a{b}c"), "'a' || char(123) || 'b' || char(125) || 'c'")
+    }
+
     func test_givenTrickyStrings_whenRenderedAndEvaluatedBySQLite_thenTheOriginalComesBack() throws {
         let dbQueue = try DatabaseQueue()
         for value in [
             "", "plain", "O'Brien", "''", "選択", "第 2 候補", "Lil’ Black Dress", "a\tb\nc",
-            "$$$/Bridge/Preferences/Label/Red=Select", "emoji 📷 end", "Grün", "%_\\",
+            "$$$/Bridge/Preferences/Label/Red=Select", "emoji 📷 end", "Grün", "%_\\", "{curly}", "}{",
         ] {
             let literal = SQLStringLiteral.render(value)
             XCTAssertTrue(literal.allSatisfy(\.isASCII), "non-ASCII in \(literal)")
+            XCTAssertFalse(literal.contains("{") || literal.contains("}"), "brace in \(literal)")
             let roundTripped = try dbQueue.read { try String.fetchOne($0, sql: "SELECT \(literal)") }
             XCTAssertEqual(roundTripped, value, "via \(literal)")
         }

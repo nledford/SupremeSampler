@@ -51,7 +51,7 @@ final class PredicateConsistencyTests: XCTestCase {
     /// own ancestor (the depth cap's case).
     private static let fixtureCategories: [(guid: String, name: String)] = [
         (guid: "nature", name: "Nature"), (guid: "style", name: "Style"),
-        (guid: "{PEOPLE}", name: "People"), (guid: "loop", name: "Loop"),
+        (guid: "{PEOPLE}", name: "People"), (guid: "loop", name: "Loop"), (guid: "deep", name: "Deep"),
     ]
 
     private static let fixtureProps: [(guid: String, parentGUID: String, name: String)] = [
@@ -62,7 +62,16 @@ final class PredicateConsistencyTests: XCTestCase {
         (guid: "catC", parentGUID: "style", name: "Charm"),
         (guid: "builtin-trees", parentGUID: "{PEOPLE}", name: "Trees"),
         (guid: "loop", parentGUID: "loop", name: "Again"),
-    ]
+        (guid: "obrien", parentGUID: "style", name: "O'Brien"),
+        (guid: "ete", parentGUID: "style", name: "Été"),
+    ] + deepChain
+
+    /// `L1` ... `L34` under category `Deep`: one level past the depth cap
+    /// on each side, so a renderer whose cap differs from
+    /// `CatalogPropNode.maxDepth` by one disagrees with the reference.
+    private static let deepChain: [(guid: String, parentGUID: String, name: String)] = (1...34).map { level in
+        (guid: "L\(level)", parentGUID: level == 1 ? "deep" : "L\(level - 1)", name: "L\(level)")
+    }
 
     /// Every path each prop GUID has, from the pure domain types -- the
     /// reference the SQL path CTE is checked against. Built-in categories
@@ -152,6 +161,20 @@ final class PredicateConsistencyTests: XCTestCase {
     /// Photo Supreme -- deliberately bypassing GRDB's parameter binding
     /// to exercise the literal-SQL path for real, not just call the
     /// renderer and inspect the string.
+    /// The photos `SQLPredicateText`'s SQL matches, by GUID -- a stronger
+    /// check than a count, where two mistakes could cancel out.
+    private func rawTextMatchingGUIDs(_ filter: SampleFilter) throws -> Set<String> {
+        let dbQueue = try DatabaseQueue(path: fixturePath, configuration: {
+            var config = Configuration()
+            config.readonly = true
+            return config
+        }())
+        let predicate = SQLPredicateText.render(filter) ?? "1 = 1"
+        return try dbQueue.read { db in
+            Set(try String.fetchAll(db, sql: "SELECT GUID FROM idCatalogItem WHERE \(predicate)"))
+        }
+    }
+
     private func rawTextMatchingCount(_ filter: SampleFilter) throws -> Int {
         let dbQueue = try DatabaseQueue(path: fixturePath, configuration: {
             var config = Configuration()
@@ -265,7 +288,7 @@ final class PredicateConsistencyTests: XCTestCase {
         case 7:
             let texts = [
                 "", "trees", "TREES", "arm", "Nature\\Trees", "\\Oak", "Trees\\Oak", "100%", "%_x", "a_x",
-                "Loop\\Again\\Again", "Again", "People", "x",
+                "Loop\\Again\\Again", "Again", "People", "x", "L31", "L32", "L33", "\\L32", "O'Brien", "été", "Été",
             ]
             let kind = KeywordPathMatchKind.allCases.randomElement(using: &rng)!
             return .keywordPath(
@@ -391,6 +414,10 @@ final class PredicateConsistencyTests: XCTestCase {
             FixtureItem(guid: "random", rating: nil, propGUIDs: [], bookmark: 3),
             FixtureItem(guid: "builtin", rating: 2, propGUIDs: ["builtin-trees"]),
             FixtureItem(guid: "loop", rating: 3, propGUIDs: ["loop", "catC"]),
+            FixtureItem(guid: "deep-32", rating: 4, propGUIDs: ["L32"]),
+            FixtureItem(guid: "deep-33", rating: 1, propGUIDs: ["L33"]),
+            FixtureItem(guid: "obrien", rating: 0, propGUIDs: ["obrien"]),
+            FixtureItem(guid: "ete", rating: 5, propGUIDs: ["ete", "catA"]),
         ]
         try makeFixture(items)
         let catalog = try PhotoSupremeCatalog(path: fixturePath)
@@ -399,9 +426,9 @@ final class PredicateConsistencyTests: XCTestCase {
         for trial in 0..<500 {
             let filter = SampleFilter(root: randomGroup(depth: 3, using: &rng))
             let viaGRDB = try await catalog.matchingItemCount(for: filter)
-            let viaRawText = try rawTextMatchingCount(filter)
-            let expected = items.filter { oracleMatches(filter.root, $0) }.count
-            XCTAssertEqual(viaGRDB, expected, "trial \(trial): PhotoSupremeCatalog is wrong for \(filter)")
+            let viaRawText = try rawTextMatchingGUIDs(filter)
+            let expected = Set(items.filter { oracleMatches(filter.root, $0) }.map(\.guid))
+            XCTAssertEqual(viaGRDB, expected.count, "trial \(trial): PhotoSupremeCatalog is wrong for \(filter)")
             XCTAssertEqual(viaRawText, expected, "trial \(trial): SQLPredicateText is wrong for \(filter)")
         }
     }
