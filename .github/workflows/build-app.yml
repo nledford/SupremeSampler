@@ -1,0 +1,47 @@
+name: Build app
+
+on:
+  workflow_call:
+    inputs:
+      expected-tag:
+        description: Release tag to verify against MARKETING_VERSION; empty to skip.
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: ./.github/actions/setup-macos-build
+
+      - name: Check the release tag against the committed version
+        if: inputs.expected-tag != ''
+        env:
+          EXPECTED_TAG: ${{ inputs.expected-tag }}
+        run: scripts/release-version.sh check "$EXPECTED_TAG"
+
+      - name: Package the DMG
+        run: just dmg-headless
+
+      - name: Write checksums
+        run: |
+          set -euo pipefail
+          cd dist
+          shasum -a 256 ./*.dmg > SHA256SUMS
+          cat SHA256SUMS
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: dmg
+          path: |
+            dist/*.dmg
+            dist/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 7
