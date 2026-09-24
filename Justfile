@@ -131,6 +131,10 @@ trust path="dist/SupremeSampler.app":
 clean:
     rm -rf SupremeSampler.xcodeproj DerivedData .build dist
 
+# Redraw the app icon PNGs from scripts/make-app-icon.swift.
+icon:
+    swift scripts/make-app-icon.swift Sources/SupremeSampler/Assets.xcassets/AppIcon.appiconset
+
 # (Re)generate the project and open it in Xcode.
 xcode: generate
     open SupremeSampler.xcodeproj
