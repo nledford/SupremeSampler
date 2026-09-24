@@ -103,6 +103,30 @@ dmg: verify-app
             fi
         }
 
+# Clear the quarantine flag on a packaged app or DMG (usage: just trust [path]).
+trust path="dist/SupremeSampler.app":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    # `just` substitutes recipe parameters textually; quote() shell-quotes the
+    # value so a path with spaces or quotes survives. (Parameters are not
+    # passed as $1 or as environment variables.)
+    target={{quote(path)}}
+    test -e "$target" || { echo "no such path: $target" >&2; exit 1; }
+
+    # The app is ad-hoc signed (no Developer ID, no notarization), so macOS
+    # refuses to launch it once it carries com.apple.quarantine -- which any
+    # copy that travelled through a browser, AirDrop, Mail or a download gets.
+    # Clearing that attribute is the whole fix; the signature itself is valid.
+    # -c clears all attributes, -r recurses into the bundle.
+    xattr -cr "$target"
+
+    if xattr -r "$target" 2>/dev/null | grep -q com.apple.quarantine; then
+        echo "warning: quarantine attributes remain on $target" >&2
+        exit 1
+    fi
+    echo "cleared quarantine on $target"
+    echo "note: spctl still rejects an ad-hoc signature; that is expected and does not block launch."
+
 # Remove build artifacts and the generated project.
 clean:
     rm -rf SupremeSampler.xcodeproj DerivedData .build dist
