@@ -36,9 +36,27 @@ Supreme's own Script Studio.
 `Sources/SupremeSampler/UI/`: `SampleBuilderModel` (`@Observable`,
 `@MainActor`) holds all rule-builder state and derives `SampleFilter`
 and the generated script from it; `CatalogPickerView` (file-open
-gate) → `SampleBuilderView` (rule builder, left pane) +
-`ScriptPreviewView` (live preview + Copy and Save… buttons, right
-pane), wired together in `ContentView`.
+gate) → a `NavigationSplitView` in `ContentView`: `SampleSettingsView`
+(sidebar: sample size, folder balance, live match count) and, in the
+detail column, `RuleBuilderView` (the rule tree, the wide main pane)
+beside `ScriptPreviewView` (live preview + Copy and Save…), which a
+toolbar button hides (`@SceneStorage`, per window). New windows open at
+1440×820; the minimum is 1100 wide.
+
+**The script pane is an `HSplitView`, not `.inspector`.** An
+`.inspector` in the `NavigationSplitView`'s detail column crashed the
+real app on the first rule added (AppKit "Update Constraints in Window"
+loop, uncaught; 2026-09-24). Bisected on screen: any AppKit-backed
+control in the detail column was enough, even one plain `Button`; a
+three-column split, an `HSplitView` and a plain `HStack` all held up.
+`WindowLayoutTests` fails if it comes back. Known cosmetic gap: hiding
+and re-showing the script doesn't restore the divider position.
+
+**Anything that must keep working with a pane hidden lives in
+`ContentView`**, the view that's always there while a catalog is open:
+the `.onChange(of: currentFilter)` / `folderBalance` refresh triggers,
+and File > Save Script… (⌘S, `saveScriptAction`), which used to be
+registered by the script pane and would have died with it.
 
 **Saving writes the committed format, not Script Studio's.**
 `PSCFile` (`ScriptGeneration/PSCFile.swift`) encodes UTF-8, LF, no BOM
@@ -60,18 +78,32 @@ Open Catalog…'s older global notification.
 
 **The rule builder edits a draft, not the domain filter.**
 `RuleGroupDraft` (`UI/RuleGroupDraft.swift`) is what the controls bind
-to — a picker kind plus a stepper value per rating rule, the tree's raw
-selection per category rule, and a stable `UUID` per rule for SwiftUI
-row identity. `SampleBuilderModel.rules` holds one; `currentFilter`
+to — a picker kind plus a stepper value per rating rule, the keyword
+rule's operator with both its tree picks and its path text (kept across
+operator switches), and a stable `UUID` per rule for SwiftUI row
+identity. `SampleBuilderModel.rules` holds one; `currentFilter`
 converts it to the domain `SampleFilter` (resolving category branches)
-on every read. Add/remove/change are methods on the draft, unit-tested
-without views (`RuleGroupDraftTests`). `RuleEditorViews.swift` renders
-it recursively as flattened `Form` rows, indented per nesting level;
-rows get id-looked-up bindings rather than `ForEach($array)` index
-bindings, which can crash when a row is removed. Keep header rows short:
-the sidebar is narrow, and an over-wide row squeezed its text into a
-tall sliver and shoved the whole form off-screen (seen in the running
-app, 2026-09-23).
+on every read. Edits are methods named for what the user does —
+`add`/`addGroup` (a group header's "+", same field as the group's last
+rule), `insertRule(_:after:)`/`insertGroup(after:)` (a row's "+"),
+`changeField(ofRule:to:)` (keeps the row's place and `UUID`),
+`removeRule` — unit-tested without views (`RuleGroupDraftTests`).
+
+`RuleEditorViews.swift` renders it Lightroom-style: one line per rule,
+`[Field] [operator] [value] … [− +]`, each group a bordered box (nested
+ones inside their parent's) headed "Match [all] of the following
+rules:" / "[All/Any/None] of the following are true". List values
+(keyword picks, labels, file types, bookmarks) sit behind a summary
+button (`ValueSummary`, "Trees, Rivers +2") that opens the list in a
+popover, so rows stay one line. "+" is a `Menu` split button: click
+repeats the row's field below it; Option-click or the arrow adds a
+nested group. Each row's controls are keyed with `.id(field)` so
+typed-but-unsaved text can't carry over to a new field. Text fields go
+through `DebouncedTextField` (0.4s before the model — and so the
+count — sees it). Rows get id-looked-up bindings rather than
+`ForEach($array)` index bindings, which can crash when a row is removed.
+Keep rows to one short line: an over-wide row once squeezed its text
+into a tall sliver and shoved the whole form off-screen (2026-09-23).
 
 **The last successfully-opened catalog path is remembered** via
 `RecentCatalogStore` (another narrow protocol port, `UserDefaults`-backed
@@ -160,8 +192,18 @@ SwiftUI's native `List(_:children:selection:)`/`OutlineGroup` want for
 their recursive `KeyPath` — that's genuinely enough for a real
 disclosure-triangle tree view with multi-select (macOS supports
 cmd/shift-click natively via `selection:`); **no third-party tree-view
-package is needed.** See `SampleBuilderView`'s `List(model.propTree,
-children: \.childrenOrNil, ...)`.
+package is needed.** See `KeywordTreePicker`'s `List(propTree,
+children: \.childrenOrNil, ...)` (in the keyword rule's popover).
+
+**Glossary** (the same words in code, tests, UI and script headers):
+*keyword* — a node in a custom category tree (Photo Supreme:
+`idPropCategory` root or `idProp`; the domain types keep their older
+`Category*` names); *keyword path* — its names from the root down,
+joined by `\` (`Nature\Trees\Oak`, `KeywordPath`); *branch* — a
+keyword plus everything under it (`CategoryBranch`); *rule* / *group* —
+one condition / all-any-none of rules; *field* / *operator* / *value* —
+the three parts of a rule row (`RuleField`, `*Operator`, the draft's
+values).
 
 **Selecting a node selects its whole branch** (the node plus every
 subcategory beneath it) — `CategoryBranch.resolve` turns the picker's
@@ -241,12 +283,35 @@ for instance, so it isn't offered.
   `COALESCE(Rating, 0) < 0`. The rule defaults to *excluding* them. It
   matched 21 photos on 2026-09-23 and none later that day (deleted in
   Photo Supreme), so expect it to be empty between lusia runs.
+- **Keyword path** (`KeywordPathFilter`, one "Keyword" field with the
+  tree picks): matches the text of a keyword's path, lusia's format
+  (`src/db/images.rs`). Operators: contains; *has a part named* — whole
+  `\`-delimited parts, consecutive (`arm` matches `Nature\Arm`, not
+  `Style\Charm`); starts with (literal prefix: `Nature\Trees` also
+  matches `Nature\Treestand`); ends with; each negated. Positive means
+  *some* keyword on the photo matches; negated means *none* does, so
+  photos without keywords count. **Empty text ignores the rule** (both
+  polarities render `1 = 1`) — unlike the file path rule, where "does
+  not contain ''" matches nothing. A–Z case folding only, like `LIKE`.
+  The paths are built by a `WITH RECURSIVE` query inside the predicate
+  (`KeywordPathFilter.keywordPathsQuery`), so a saved script matches
+  keywords added after it was generated; custom categories only,
+  written `substr(GUID, 1, 1) <> char(123)` to keep `{` out of scripts,
+  depth-capped at `CatalogPropNode.maxDepth` (32) like the in-app tree —
+  a prop whose GUID equals a category's is its own ancestor, and once
+  made `buildTree` recurse forever. Real catalog, 2026-09-24: 189
+  keywords under 5 categories, max depth 3; "has a part named trees"
+  counts thousands of in 0.02–0.5s, "doesn't contain" ~1.5s. Ran under Photo
+  Supreme's own bundled SQLite 3.35.5 (loaded via ctypes, read-only);
+  **not yet run in Script Studio.** The row shows "N keywords" as you
+  type, from the in-memory tree (`matchingKeywordPaths`), no query.
 - **Negations**: `RatingFilter.isNot` renders `Rating IS NOT n`,
   SQLite's NULL-safe inequality, so an unknown rating counts as "not n"
   — consistent with "none of" groups. `PathFilter.negated` renders
   `NOT EXISTS`. The label, file type, category and bookmark rules
   already have "none of". The UI offers each as one flat operator
-  choice (`RatingComparisonKind.isNot`, `PathOperator`).
+  choice (`RatingComparisonKind.isNot`, `PathOperator`,
+  `KeywordOperator`).
 
 ## Switching catalogs (File > Open Catalog…)
 
@@ -279,11 +344,16 @@ measured with `-enableCodeCoverage YES -resultBundlePath <path>` plus
 `xcrun xccov view --report <path>.xcresult` (per-file breakdown via
 `xccov view --archive --file <path> <path>.xcresult`). Source coverage
 (everything under `Sources/`, i.e. excluding the test target's own
-files) sits at 98%+ as of this note — comfortably above a 70% bar, kept
-that high deliberately since most of the app's logic (query layer,
-script generation, the view-model) is pure/testable, not because every
-last line needs covering for its own sake. Two known, deliberate,
-reasoned exceptions:
+files) was 93.3% on 2026-09-24 (92.0% on `main` just before the
+Lightroom-style rule builder; an older note here said 98%+, which no
+longer held) — comfortably above a 70% bar, kept high deliberately
+since most of the app's logic (query layer, script generation, the
+view-model) is pure/testable, not because every last line needs
+covering for its own sake. The biggest remaining gaps are the real
+system adapters (`SavePanelDestinationChooser`, `SystemClipboard`,
+which tests replace with fakes by design) and view closures that only
+run while SwiftUI renders (popover contents, button actions). Two older,
+deliberate, reasoned exceptions:
 
 - `PhotoSupremeCatalog.sampleGUIDs`'s retry-loop-exhaustion branch (the
   `attempt < maxSampleAttempts` condition actually being what ends the
@@ -313,6 +383,22 @@ directly-callable method first: `CatalogPickerView.handleFileImporterResult`
 and `ScriptPreviewView.copyToClipboard` are both tested with genuine
 behavioral assertions (the model's resulting state; the actual system
 clipboard's contents), not just executed-without-crashing.
+
+**Behavior that only happens while SwiftUI draws** (`.onChange`, layout)
+is tested by rendering `ContentView` in a real window
+(`WindowLayoutTests`, via `HostedWindow` in `TestSupport.swift`). The
+window must be **on screen**: offscreen, a never-displayed window hit a
+layout loop the on-screen one didn't, and the reverse can happen too, so
+only on-screen results count. `HostedWindow.close()` waits a moment so
+an AppKit exception reported late is charged to the test that caused it
+— before that, one landed on an unrelated `ScriptSavingTests` case.
+
+**While Xcode is open, test into a private DerivedData**
+(`xcodebuild ... -derivedDataPath <scratch>` after `xcodegen generate`);
+`just test` shares Xcode's, and a concurrent Xcode build deleted the
+test bundle mid-run (2026-09-24, "Failed to create a bundle instance").
+Always regenerate first: a new file missing from the project is simply
+not compiled, and its tests silently don't run.
 
 A pre-existing, probabilistic bug was fixed while doing this work:
 `PhotoSupremeCatalog.sampleGUIDs` could occasionally undersample by 1
@@ -374,11 +460,14 @@ touching it:
   parameterized, for live queries) implement the same rating/category
   rules twice, deliberately not unified — see `SQLPredicateText`'s doc
   comment for why. **If you change what a `RatingFilter`,
-  `CategoryFilter`, or `GroupMatch` case means, change it in both
+  `CategoryFilter`, `KeywordPathFilter` or `GroupMatch` case means, change it in both
   places**, and keep `PredicateConsistencyTests` passing — it runs both
   implementations against the same fixture, and also checks both
   against an in-memory reference (`oracleMatches`) over 500 seeded
-  random rule trees. Agreement alone isn't enough: both renderers could
+  random rule trees — for the script's SQL, by which photos match, not
+  just how many. Its keyword fixture includes a built-in `{...}`
+  category, `%`/`_`/`'`/accented names, a self-parented prop and a
+  34-deep chain, so a depth cap off by one fails. Agreement alone isn't enough: both renderers could
   share a mistake. Swift's exhaustive `switch` catches a *new* unhandled
   case automatically; only this test catches a *semantic* change to an
   existing case made in one file and not the other.
@@ -431,8 +520,9 @@ touching it:
   Why folders and these presets: see the survey in `FolderBalance`'s doc
   comment.
 - **Text in generated SQL is pure ASCII.** `SQLStringLiteral` renders
-  printable-ASCII runs as quoted literals and everything else as
-  SQLite `char(code, ...)` joined with `||` (`'Lil' || char(8217)`).
+  printable-ASCII runs as quoted literals and everything else — plus
+  `{` and `}`, Pascal's comment delimiters — as SQLite `char(code, ...)`
+  joined with `||` (`'Lil' || char(8217)`).
   It's unknown how Script Studio decodes a BOM-less file; a
   Delphi-lineage tool may assume the system code page, which would
   garble raw UTF-8 like "選択" into text that silently matches nothing.
