@@ -77,6 +77,11 @@ workflow then builds the DMG and publishes a GitHub Release with the DMG and a
 `SHA256SUMS` file attached. The workflow refuses a tag that disagrees with
 `MARKETING_VERSION`, so the tag and the built app can't drift apart.
 
+The very first release is the exception: `MARKETING_VERSION` is already `0.1.0`,
+and `just release` refuses a version equal to the current one, so tag it by hand
+(`git tag v0.1.0 && git push origin v0.1.0`). Every later release goes through
+`just release X.Y.Z`.
+
 The DMG is **ad-hoc signed, not notarized**, so macOS quarantines it and
 refuses the first launch. Right-click the app in Applications and choose
 **Open**, or run:

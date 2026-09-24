@@ -569,10 +569,10 @@ Three workflows under `.github/workflows/`:
   release artifact is produced. Checks out, runs the composite setup action,
   optionally checks the tag, runs `just dmg-headless`, writes `SHA256SUMS`, and
   uploads the DMG + checksums as an artifact.
-- `ci.yml` — on PRs and pushes to `main`: a `test` job (`just test`) and a
-  `build` job that calls `build-app.yml`. The `build` job exists because
-  `just test` builds Debug only, so a Release-only breakage would otherwise
-  first surface during a release.
+- `ci.yml` — on PRs and pushes to `main`: a `test` job (the release-version
+  shell tests, then `just test`) and a `build` job that calls `build-app.yml`.
+  The `build` job exists because `just test` builds Debug only, so a
+  Release-only breakage would otherwise first surface during a release.
 - `release.yml` — on `v*` tag pushes and `workflow_dispatch`. Calls
   `build-app.yml` with the tag, then (tag pushes only) publishes a GitHub
   Release with the DMG and `SHA256SUMS`. `workflow_dispatch` is the dry run:
