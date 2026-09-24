@@ -142,6 +142,35 @@ final class SQLPredicateTextTests: XCTestCase {
         XCTAssertTrue(sql.contains("LIKE '%Lil' || char(8217) ESCAPE"))
     }
 
+    // MARK: - Keyword path
+
+    private func keywordPathFilter(_ kind: KeywordPathMatchKind, _ text: String, negated: Bool = false) -> SampleFilter {
+        SampleFilter(
+            root: RuleGroup(match: .all, rules: [.keywordPath(KeywordPathFilter(kind: kind, text: text, negated: negated))]))
+    }
+
+    func test_givenEmptyKeywordPathText_whenRendering_thenTheRuleIsAlwaysTrue() {
+        XCTAssertEqual(SQLPredicateText.render(keywordPathFilter(.contains, "")), "1 = 1")
+        XCTAssertEqual(SQLPredicateText.render(keywordPathFilter(.hasPart, "", negated: true)), "1 = 1")
+    }
+
+    /// `{` opens a comment in Pascal; the script's SQL avoids it even
+    /// inside a string literal, given Script Studio's flaky comment
+    /// handling (AGENTS.md).
+    func test_givenAKeywordPathRule_whenRendering_thenTheSQLHasNoCurlyBrace() throws {
+        let sql = try XCTUnwrap(SQLPredicateText.render(keywordPathFilter(.hasPart, "Trees")))
+
+        XCTAssertFalse(sql.contains("{"), sql)
+        XCTAssertTrue(sql.hasPrefix("idCatalogItem.GUID IN (SELECT d.CatalogItemGUID"), sql)
+    }
+
+    func test_givenANegatedKeywordPathRule_whenRendering_thenItUsesTheNullSafeNotIn() throws {
+        let sql = try XCTUnwrap(SQLPredicateText.render(keywordPathFilter(.contains, "x", negated: true)))
+
+        XCTAssertTrue(sql.hasPrefix("idCatalogItem.GUID NOT IN ("), sql)
+        XCTAssertTrue(sql.contains("d.CatalogItemGUID IS NOT NULL"), sql)
+    }
+
     // MARK: - Color label
 
     func test_givenAnyOfLabels_whenRendering_thenNonASCIILabelsAreBuiltFromCodePoints() {

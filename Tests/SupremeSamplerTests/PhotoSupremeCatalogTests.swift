@@ -568,6 +568,103 @@ final class PhotoSupremeCatalogTests: XCTestCase {
         XCTAssertEqual(matches, 5)
     }
 
+    // MARK: - Keyword paths
+
+    /// Nature\Trees\Oak, Nature\Arm, Nature\Treestand, Style\Charm, a "Trees"
+    /// under a built-in `{...}` category, and one photo with no keywords.
+    private func makeKeywordPathFixture() throws {
+        try makeFixture([
+            FixtureItem(guid: "oak-photo", propGUIDs: ["oak"]),
+            FixtureItem(guid: "arm-photo", propGUIDs: ["arm"]),
+            FixtureItem(guid: "band-photo", propGUIDs: ["band"]),
+            FixtureItem(guid: "charm-photo", propGUIDs: ["charm"]),
+            FixtureItem(guid: "builtin-photo", propGUIDs: ["builtin-trees"]),
+            FixtureItem(guid: "bare-photo"),
+        ])
+        try insertPropCategories([
+            (guid: "nature", name: "Nature"), (guid: "style", name: "Style"), (guid: "{PEOPLE}", name: "People"),
+        ])
+        try insertProps([
+            (guid: "trees", parentGUID: "nature", name: "Trees"),
+            (guid: "oak", parentGUID: "trees", name: "Oak"),
+            (guid: "arm", parentGUID: "nature", name: "Arm"),
+            (guid: "band", parentGUID: "nature", name: "Treestand"),
+            (guid: "charm", parentGUID: "style", name: "Charm"),
+            (guid: "builtin-trees", parentGUID: "{PEOPLE}", name: "Trees"),
+        ])
+    }
+
+    private func keywordPathCount(_ kind: KeywordPathMatchKind, _ text: String, negated: Bool = false) async throws -> Int {
+        try await PhotoSupremeCatalog(path: fixturePath).matchingItemCount(
+            for: SampleFilter(
+                root: RuleGroup(
+                    match: .all, rules: [.keywordPath(KeywordPathFilter(kind: kind, text: text, negated: negated))])))
+    }
+
+    func test_givenANestedKeyword_whenAPartIsNamedInAnyCase_thenPhotosWithItMatch() async throws {
+        try makeKeywordPathFixture()
+
+        let matches = try await keywordPathCount(.hasPart, "trees")
+
+        XCTAssertEqual(matches, 1, "oak-photo only: not Treestand, not the built-in Trees")
+    }
+
+    func test_givenCharmAndArm_whenMatchingAPartNamedArmOrContainingArm_thenOnlyContainsMatchesCharm() async throws {
+        try makeKeywordPathFixture()
+
+        let part = try await keywordPathCount(.hasPart, "arm")
+        let contains = try await keywordPathCount(.contains, "arm")
+
+        XCTAssertEqual(part, 1)
+        XCTAssertEqual(contains, 2)
+    }
+
+    func test_givenAPrefixOrSuffix_whenMatching_thenStartsWithIsLiteralAndEndsWithNamesTheKeyword() async throws {
+        try makeKeywordPathFixture()
+
+        let starts = try await keywordPathCount(.startsWith, "Nature\\Trees")
+        let ends = try await keywordPathCount(.endsWith, "\\Oak")
+
+        XCTAssertEqual(starts, 2, "oak-photo and band-photo")
+        XCTAssertEqual(ends, 1)
+    }
+
+    func test_givenAPhotoWithNoKeywords_whenNegated_thenItMatchesAlongWithEveryPhotoLackingTheKeyword() async throws {
+        try makeKeywordPathFixture()
+
+        let notTrees = try await keywordPathCount(.hasPart, "trees", negated: true)
+        let containsX = try await keywordPathCount(.contains, "x")
+        let notContainsX = try await keywordPathCount(.contains, "x", negated: true)
+
+        XCTAssertEqual(notTrees, 5)
+        XCTAssertEqual(containsX, 0)
+        XCTAssertEqual(notContainsX, 6)
+    }
+
+    func test_givenEmptyText_whenMatchingEitherWay_thenEveryPhotoMatches() async throws {
+        try makeKeywordPathFixture()
+
+        for kind in KeywordPathMatchKind.allCases {
+            for negated in [false, true] {
+                let matches = try await keywordPathCount(kind, "", negated: negated)
+                XCTAssertEqual(matches, 6, "\(kind), negated: \(negated)")
+            }
+        }
+    }
+
+    /// A prop whose GUID is also a category's, parented under it, is its
+    /// own ancestor. The path CTE stops at the same depth cap as
+    /// `CatalogPropNode.buildTree` instead of recursing forever.
+    func test_givenAPropThatIsItsOwnAncestor_whenMatchingPaths_thenCountingFinishes() async throws {
+        try makeFixture([FixtureItem(guid: "loop-photo", propGUIDs: ["loop"])])
+        try insertPropCategories([(guid: "loop", name: "Loop")])
+        try insertProps([(guid: "loop", parentGUID: "loop", name: "Again")])
+
+        let matches = try await keywordPathCount(.startsWith, "Loop\\Again\\Again")
+
+        XCTAssertEqual(matches, 1)
+    }
+
     // MARK: - Color labels
 
     /// Labels are free text in the real catalog, including imports from

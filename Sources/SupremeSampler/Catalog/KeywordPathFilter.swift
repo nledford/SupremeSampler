@@ -77,3 +77,48 @@ struct KeywordPathFilter: Equatable {
         }
     }
 }
+
+// The SQL pieces both predicate renderers share. None of them carries
+// user text except `likePattern`, which has no binding-vs-literal
+// difference either (the same reasoning as `PathFilter.likePattern`).
+// An `extension` adds members to a type declared elsewhere -- like a
+// second Rust `impl` block for the same struct.
+extension KeywordPathFilter {
+    /// A `WITH RECURSIVE` query yielding `kp(guid, path, depth)` for
+    /// every keyword -- the SQL twin of `KeywordPath.all(in:)` over
+    /// `PhotoSupremeCatalog.listPropTree()`'s tree: custom categories
+    /// only, the same depth cap as `CatalogPropNode.maxDepth`. Ends
+    /// ready for a `WHERE` on `kp`, e.g. `<cte> WHERE kp.path LIKE ...`.
+    ///
+    /// `substr(GUID, 1, 1) <> char(123)` is `GUID NOT LIKE '{%'` (123 is
+    /// `{`) spelled without a `{`, which opens a comment in Pascal and
+    /// would be the first one inside a generated script's string literal
+    /// -- not worth testing Script Studio's flaky comment handling on.
+    static let keywordPathsQuery = """
+        WITH RECURSIVE kp(guid, path, depth) AS (\
+        SELECT GUID, CategoryName, 0 FROM idPropCategory WHERE substr(GUID, 1, 1) <> char(123) \
+        UNION ALL \
+        SELECT p.GUID, kp.path || '\\' || p.PropName, kp.depth + 1 FROM idProp p JOIN kp ON p.ParentGUID = kp.guid \
+        WHERE kp.depth < \(CatalogPropNode.maxDepth)) \
+        SELECT kp.guid FROM kp
+        """
+
+    /// What the `LIKE` tests: the path itself, or the path with a `\` on
+    /// each end for `.hasPart`, so whole parts are `\`-delimited
+    /// everywhere, including the first and last.
+    var likeSubject: String {
+        kind == .hasPart ? "'\\' || kp.path || '\\'" : "kp.path"
+    }
+
+    /// The `LIKE` pattern (with `ESCAPE '\'`) for `text`. For `.hasPart`
+    /// the surrounding separators are escaped `\`s: `%\\trees\\%`.
+    var likePattern: String {
+        let escaped = LikePattern.escape(text)
+        switch kind {
+        case .contains: return "%" + escaped + "%"
+        case .hasPart: return "%\\\\" + escaped + "\\\\%"
+        case .startsWith: return escaped + "%"
+        case .endsWith: return "%" + escaped
+        }
+    }
+}

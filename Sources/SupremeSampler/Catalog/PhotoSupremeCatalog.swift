@@ -359,6 +359,7 @@ struct PhotoSupremeCatalog: Sendable {
         case .rating(let rating): return ratingPredicate(rating)
         case .category(let category): return categoryPredicate(category)
         case .path(let path): return pathPredicate(path)
+        case .keywordPath(let keywordPath): return keywordPathPredicate(keywordPath)
         case .label(let label): return labelPredicate(label)
         case .fileType(let fileType): return fileTypePredicate(fileType)
         case .bookmark(let bookmark): return bookmarkPredicate(bookmark)
@@ -449,6 +450,26 @@ struct PhotoSupremeCatalog: Sendable {
             SELECT 1 FROM idCache_FilePath fp
             WHERE fp.FilePathGUID = idCatalogItem.PathGUID
               AND (fp.FilePath || idCatalogItem.FileName) LIKE \(path.likePattern) ESCAPE '\\'
+        )
+        """
+    }
+
+    /// Photos with (or, negated, without) a keyword whose path matches.
+    /// Uncorrelated like `photosWithAnyPropSubquery`, so it's driven from
+    /// the assignment table's index; the path query itself runs once and
+    /// is tiny (189 keywords on the real catalog, 2026-09-24). Empty text
+    /// is always true, both ways -- see `KeywordPathFilter`.
+    private static func keywordPathPredicate(_ keywordPath: KeywordPathFilter) -> SQL {
+        guard !keywordPath.text.isEmpty else { return "1 = 1" }
+        let membership: SQL = keywordPath.negated ? "NOT IN" : "IN"
+        return """
+        idCatalogItem.GUID \(membership) (
+            SELECT d.CatalogItemGUID FROM idCatalogItemDefinition d
+            WHERE d.CatalogItemGUID IS NOT NULL
+              AND d.GUID IN (
+                \(sql: KeywordPathFilter.keywordPathsQuery)
+                WHERE \(sql: keywordPath.likeSubject) LIKE \(keywordPath.likePattern) ESCAPE '\\'
+              )
         )
         """
     }

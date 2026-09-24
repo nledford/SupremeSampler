@@ -22,6 +22,8 @@ enum FilterRule: Equatable {
     case rating(RatingFilter)
     case category(CategoryFilter)
     case path(PathFilter)
+    /// Some (or, negated, no) keyword's path matches text.
+    case keywordPath(KeywordPathFilter)
     case label(LabelFilter)
     case fileType(FileTypeFilter)
     case bookmark(BookmarkFilter)

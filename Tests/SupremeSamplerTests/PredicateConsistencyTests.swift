@@ -46,6 +46,34 @@ final class PredicateConsistencyTests: XCTestCase {
         var fullPath: String { path ?? "/Volumes/Test/photos/\(guid).jpg" }
     }
 
+    /// Custom categories, one built-in (`{...}`, never matched), and
+    /// `loop`: a category whose GUID a prop reuses, making that prop its
+    /// own ancestor (the depth cap's case).
+    private static let fixtureCategories: [(guid: String, name: String)] = [
+        (guid: "nature", name: "Nature"), (guid: "style", name: "Style"),
+        (guid: "{PEOPLE}", name: "People"), (guid: "loop", name: "Loop"),
+    ]
+
+    private static let fixtureProps: [(guid: String, parentGUID: String, name: String)] = [
+        (guid: "catA", parentGUID: "nature", name: "Trees"),
+        (guid: "catA-child", parentGUID: "catA", name: "Oak"),
+        (guid: "catB", parentGUID: "nature", name: "Arm"),
+        (guid: "catB-child", parentGUID: "catB", name: "100%_x"),
+        (guid: "catC", parentGUID: "style", name: "Charm"),
+        (guid: "builtin-trees", parentGUID: "{PEOPLE}", name: "Trees"),
+        (guid: "loop", parentGUID: "loop", name: "Again"),
+    ]
+
+    /// Every path each prop GUID has, from the pure domain types -- the
+    /// reference the SQL path CTE is checked against. Built-in categories
+    /// are left out the way `PhotoSupremeCatalog.listPropTree` leaves
+    /// them out.
+    private static let fixtureKeywordPaths: [String: [String]] = {
+        let tree = CatalogPropNode.buildTree(
+            categories: fixtureCategories.filter { !$0.guid.hasPrefix("{") }, props: fixtureProps)
+        return Dictionary(grouping: KeywordPath.all(in: tree), by: \.guid).mapValues { $0.map(\.text) }
+    }()
+
     private func makeFixture(_ items: [FixtureItem]) throws {
         let dbQueue = try DatabaseQueue(path: fixturePath)
         try dbQueue.write { db in
@@ -72,6 +100,21 @@ final class PredicateConsistencyTests: XCTestCase {
                         PRIMARY KEY (GUID, CatalogItemGUID)
                     )
                     """)
+            // The keyword tree the keyword path rule reads. `catA`...
+            // are the prop GUIDs the fixture items carry; see
+            // `fixtureCategories`/`fixtureProps` for the shape.
+            try db.execute(sql: "CREATE TABLE idPropCategory (GUID TEXT PRIMARY KEY, CategoryName TEXT)")
+            try db.execute(sql: "CREATE TABLE idProp (GUID TEXT PRIMARY KEY, ParentGUID TEXT, PropName TEXT)")
+            for category in Self.fixtureCategories {
+                try db.execute(
+                    sql: "INSERT INTO idPropCategory (GUID, CategoryName) VALUES (?, ?)",
+                    arguments: [category.guid, category.name])
+            }
+            for prop in Self.fixtureProps {
+                try db.execute(
+                    sql: "INSERT INTO idProp (GUID, ParentGUID, PropName) VALUES (?, ?, ?)",
+                    arguments: [prop.guid, prop.parentGUID, prop.name])
+            }
             // Nullable columns plus one NULL-photo row, matching what the
             // real schema permits: guards both renderers against the
             // `NOT IN` + NULL trap.
@@ -186,7 +229,7 @@ final class PredicateConsistencyTests: XCTestCase {
     }
 
     private func randomRule(depth: Int, using rng: inout SeededGenerator) -> FilterRule {
-        switch Int.random(in: 0..<(depth > 0 ? 8 : 7), using: &rng) {
+        switch Int.random(in: 0..<(depth > 0 ? 9 : 8), using: &rng) {
         case 0:
             let value = Int.random(in: 0...5, using: &rng)
             return .rating(
@@ -219,6 +262,14 @@ final class PredicateConsistencyTests: XCTestCase {
             return .bookmark(BookmarkFilter(values: values, mode: [ValueMatchMode.any, .none].randomElement(using: &rng)!))
         case 6:
             return .pendingDeletion(Bool.random(using: &rng))
+        case 7:
+            let texts = [
+                "", "trees", "TREES", "arm", "Nature\\Trees", "\\Oak", "Trees\\Oak", "100%", "%_x", "a_x",
+                "Loop\\Again\\Again", "Again", "People", "x",
+            ]
+            let kind = KeywordPathMatchKind.allCases.randomElement(using: &rng)!
+            return .keywordPath(
+                KeywordPathFilter(kind: kind, text: texts.randomElement(using: &rng)!, negated: Bool.random(using: &rng)))
         default:
             return .group(randomGroup(depth: depth - 1, using: &rng))
         }
@@ -284,6 +335,9 @@ final class PredicateConsistencyTests: XCTestCase {
             return bookmark.mode == .any ? bookmark.values.contains(value) : !bookmark.values.contains(value)
         case .pendingDeletion(let isPending):
             return ((item.rating ?? 0) < 0) == isPending
+        case .keywordPath(let keywordPath):
+            let paths = item.propGUIDs.flatMap { Self.fixtureKeywordPaths[$0] ?? [] }
+            return keywordPath.matchesPhoto(keywordPaths: paths)
         case .group(let group):
             return oracleMatches(group, item)
         }
@@ -335,6 +389,8 @@ final class PredicateConsistencyTests: XCTestCase {
             FixtureItem(guid: "curated", rating: 5, propGUIDs: ["catB"], label: "Select", bookmark: 2),
             FixtureItem(guid: "null-bookmark", rating: 0, propGUIDs: [], bookmark: nil),
             FixtureItem(guid: "random", rating: nil, propGUIDs: [], bookmark: 3),
+            FixtureItem(guid: "builtin", rating: 2, propGUIDs: ["builtin-trees"]),
+            FixtureItem(guid: "loop", rating: 3, propGUIDs: ["loop", "catC"]),
         ]
         try makeFixture(items)
         let catalog = try PhotoSupremeCatalog(path: fixturePath)

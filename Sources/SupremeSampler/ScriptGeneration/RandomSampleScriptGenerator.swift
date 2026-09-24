@@ -247,6 +247,7 @@ enum RandomSampleScriptGenerator {
         case .rating(let rating): return [indent + "Rating filter: \(describe(rating))"]
         case .category(let category): return [indent + "Category filter: \(describe(category))"]
         case .path(let path): return [indent + "Path filter: \(describe(path))"]
+        case .keywordPath(let keywordPath): return [indent + "Keyword path filter: \(describe(keywordPath))"]
         case .label(let label):
             let count = label.labels.count
             let mode = label.mode == .any ? "any of" : "none of"
@@ -286,6 +287,21 @@ enum RandomSampleScriptGenerator {
         case (.contains, true): phrase = "does not contain"
         }
         return phrase + " \"" + commentSafe(path.text) + "\""
+    }
+
+    private static func describe(_ keywordPath: KeywordPathFilter) -> String {
+        let phrase: String
+        switch (keywordPath.kind, keywordPath.negated) {
+        case (.contains, false): phrase = "contains"
+        case (.hasPart, false): phrase = "has a part named"
+        case (.startsWith, false): phrase = "starts with"
+        case (.endsWith, false): phrase = "ends with"
+        case (.contains, true): phrase = "does not contain"
+        case (.hasPart, true): phrase = "has no part named"
+        case (.startsWith, true): phrase = "does not start with"
+        case (.endsWith, true): phrase = "does not end with"
+        }
+        return phrase + " \"" + commentSafe(keywordPath.text) + "\""
     }
 
     /// User text shown inside the `{ ... }` header comment: "}" would end

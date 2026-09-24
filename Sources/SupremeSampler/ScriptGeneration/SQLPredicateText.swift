@@ -46,6 +46,7 @@ enum SQLPredicateText {
         case .rating(let rating): return ratingClause(rating)
         case .category(let category): return categoryClause(category)
         case .path(let path): return pathClause(path)
+        case .keywordPath(let keywordPath): return keywordPathClause(keywordPath)
         case .label(let label): return labelClause(label)
         case .fileType(let fileType): return fileTypeClause(fileType)
         case .bookmark(let bookmark): return bookmarkClause(bookmark)
@@ -117,6 +118,16 @@ enum SQLPredicateText {
         (path.negated ? "NOT " : "") + "EXISTS (SELECT 1 FROM idCache_FilePath fp WHERE fp.FilePathGUID = idCatalogItem.PathGUID"
             + " AND (fp.FilePath || idCatalogItem.FileName) LIKE \(SQLStringLiteral.render(path.likePattern))"
             + " ESCAPE '\\')"
+    }
+
+    /// Same shape as `PhotoSupremeCatalog.keywordPathPredicate`.
+    private static func keywordPathClause(_ keywordPath: KeywordPathFilter) -> String {
+        guard !keywordPath.text.isEmpty else { return "1 = 1" }
+        return "idCatalogItem.GUID " + (keywordPath.negated ? "NOT IN" : "IN")
+            + " (SELECT d.CatalogItemGUID FROM idCatalogItemDefinition d WHERE d.CatalogItemGUID IS NOT NULL"
+            + " AND d.GUID IN (" + KeywordPathFilter.keywordPathsQuery
+            + " WHERE " + keywordPath.likeSubject + " LIKE " + SQLStringLiteral.render(keywordPath.likePattern)
+            + " ESCAPE '\\'))"
     }
 
     private static func ratingClause(_ rating: RatingFilter) -> String {

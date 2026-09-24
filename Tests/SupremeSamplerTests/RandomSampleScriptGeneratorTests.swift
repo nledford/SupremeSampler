@@ -269,6 +269,16 @@ final class RandomSampleScriptGeneratorTests: XCTestCase {
         XCTAssertTrue(script.contains("Path filter: does not end with \".png\""))
     }
 
+    func test_givenKeywordPathRules_whenGenerating_thenTheHeaderSaysHowEachMatches() {
+        let script = header(for: [
+            .keywordPath(KeywordPathFilter(kind: .hasPart, text: "Trees")),
+            .keywordPath(KeywordPathFilter(kind: .contains, text: "Lil’ }", negated: true)),
+        ])
+
+        XCTAssertTrue(script.contains("Keyword path filter: has a part named \"Trees\""), script)
+        XCTAssertTrue(script.contains("Keyword path filter: does not contain \"Lil? )\""), script)
+    }
+
     func test_givenABookmarkRule_whenGenerating_thenTheHeaderNamesTheBookmarks() {
         let script = header(for: [.bookmark(BookmarkFilter(values: [2, 5], mode: .none))])
 
