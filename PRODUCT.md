@@ -111,11 +111,12 @@ locally; it is not published by IDimager.
   has no foreign keys, only triggers, cascading deletes, and non-stable rowids
   — writing to it from outside Photo Supreme is unsafe.
 - **The app does not run scripts.** Output is source text for the user to run.
-- **Two ways out: Copy and Save.** Copy puts the script on the clipboard to
-  paste into Script Studio; Save… (⌘S) writes a `.psc` file, starting in the
-  scripts repo. Save waits until the live match count has finished, so a file
-  on disk is always for a filter validated against real data. Saved files use
-  the committed reference script's format: UTF-8, LF, no BOM.
+- **Two ways out: Copy and Save.** Both are in the window's toolbar. Copy
+  (⇧⌘C) puts the script on the clipboard to paste into Script Studio; Save…
+  (⌘S) writes a `.psc` file, starting in the scripts repo. Save waits until
+  the live match count has finished, so a file on disk is always for a filter
+  validated against real data. Saved files use the committed reference
+  script's format: UTF-8, LF, no BOM.
 - **Not sandboxed.** No security-scoped bookmark handling; a plain path string
   is persisted for the last-opened catalog. Sandboxing would require revisiting
   both the picker and the recent-catalog store.

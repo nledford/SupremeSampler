@@ -53,7 +53,7 @@ struct SupremeSamplerApp: App {
                 }
                 .keyboardShortcut("o", modifiers: .command)
             }
-            SaveScriptCommands()
+            ScriptCommands()
         }
     }
 }

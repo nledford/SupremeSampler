@@ -18,7 +18,7 @@ import XCTest
 ///    anything.
 /// 2. Logic that got *pulled out* of a view for exactly this reason
 ///    (`CatalogPickerView.handleFileImporterResult`,
-///    `ScriptPreviewView.copyToClipboard`) can be tested for real:
+///    `ContentView.copyScript`) can be tested for real:
 ///    called directly, with real assertions on what it did (the model's
 ///    resulting state, the actual system clipboard).
 ///
@@ -344,57 +344,55 @@ final class ViewRenderingTests: XCTestCase {
         _ = view.body
     }
 
-    func test_givenText_whenCopyingToClipboard_thenClipboardReceivesIt() {
+    // MARK: - Copy (toolbar and Edit > Copy Script)
+
+    func test_givenTheWindowsCopyAction_whenCopying_thenTheClipboardReceivesTheScript() {
         // A fake, never the real NSPasteboard.general -- see
         // ClipboardWriting's doc comment. An earlier version of this
         // test wrote to the real system clipboard, which leaked a test
         // marker string into it outside the test run entirely.
         let clipboard = FakeClipboard()
-        let view = ScriptPreviewView(model: SampleBuilderModel.forTesting(), clipboard: clipboard)
-        let text = "SELECT GUID FROM idCatalogItem;"
-
-        view.copyToClipboard(text)
-
-        XCTAssertEqual(clipboard.writtenText, text)
-    }
-
-    // MARK: - ScriptPreviewView: saving
-
-    private func countedModel() async -> SampleBuilderModel {
         let model = SampleBuilderModel.forTesting()
-        model.injectCatalogForTesting(FakeCatalogForViewTests())
-        model.refreshMatchingCount()
-        await model.waitForPendingMatchCountForTesting()
-        return model
+        model.rules.add(.rating)
+        let view = ContentView(model: model, clipboard: clipboard)
+
+        view.copyScript()
+
+        XCTAssertEqual(clipboard.writtenText, model.generatedScript)
+        XCTAssertEqual(model.copyCount, 1)
     }
 
-    func test_givenTheSaveButton_whenSaving_thenThePaneSavesThroughItsChooserStartingInTheScriptsRepo() async throws {
-        let destination = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".psc")
-        defer { try? FileManager.default.removeItem(at: destination) }
-        let model = await countedModel()
-        let chooser = FakeDestinationChooser(answer: destination)
-        let view = ScriptPreviewView(model: model, destinationChooser: chooser)
+    func test_givenACatalogPath_whenTitlingTheWindow_thenTheTitleIsTheFileAndTheSubtitleItsFolder() {
+        let model = SampleBuilderModel.forTesting()
+        let view = ContentView(model: model)
+        XCTAssertEqual(view.catalogTitle, "SupremeSampler")
+        XCTAssertEqual(view.catalogFolder, "")
 
-        await view.saveScript()
+        model.injectCatalogForTesting(FakeCatalogForViewTests())  // path "test"
+        XCTAssertEqual(view.catalogTitle, "test")
 
-        XCTAssertEqual(chooser.askedDirectory, PSCFile.preferredDirectory())
-        XCTAssertTrue(FileManager.default.fileExists(atPath: destination.path))
-        XCTAssertEqual(model.lastSavedScriptURL, destination)
+        let home = FileManager.default.homeDirectoryForCurrentUser.path
+        XCTAssertEqual(
+            ContentView.folderDisplay(forCatalogAt: home + "/Pictures/Library/a.cat.db"), "~/Pictures/Library")
+        XCTAssertEqual(ContentView.folderDisplay(forCatalogAt: "/Volumes/Photos/a.cat.db"), "/Volumes/Photos")
     }
 
-    func test_givenASavedOrFailedSave_whenBuildingScriptPreviewView_thenBodyDoesNotCrash() async {
-        let saved = await countedModel()
-        let destination = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".psc")
-        defer { try? FileManager.default.removeItem(at: destination) }
-        await saved.saveScript(using: FakeDestinationChooser(answer: destination), startingIn: nil)
-        _ = ScriptPreviewView(model: saved, destinationChooser: FakeDestinationChooser(answer: nil)).body
+    func test_givenAnyModel_whenBuildingTheToolbarButtons_thenBodyDoesNotCrash() {
+        _ = ScriptToolbarButtons(model: SampleBuilderModel.forTesting(), copy: {}, save: {}).body
+    }
 
-        let failed = await countedModel()
-        await failed.saveScript(
-            using: FakeDestinationChooser(answer: URL(fileURLWithPath: "/nonexistent/\(UUID().uuidString)/A.psc")),
-            startingIn: nil)
-        XCTAssertNotNil(failed.saveErrorMessage)
-        _ = ScriptPreviewView(model: failed, destinationChooser: FakeDestinationChooser(answer: nil)).body
+    func test_givenEachForecast_whenAskingForTheSaveHelp_thenAShortOrEmptySampleIsSpelledOut() {
+        XCTAssertEqual(
+            ScriptToolbarButtons.saveHelp(canSave: false, forecast: nil), "Available once the match count has finished")
+        XCTAssertEqual(
+            ScriptToolbarButtons.saveHelp(canSave: true, forecast: SampleForecast(matching: 50, requested: 10)),
+            "Save as a .psc file (⌘S)")
+        XCTAssertEqual(
+            ScriptToolbarButtons.saveHelp(canSave: true, forecast: SampleForecast(matching: 2, requested: 10_000)),
+            "Save as a .psc file (⌘S). It will pick 2, not the \(10_000.formatted()) requested.")
+        XCTAssertEqual(
+            ScriptToolbarButtons.saveHelp(canSave: true, forecast: SampleForecast(matching: 0, requested: 10)),
+            "Save as a .psc file (⌘S). No photos match it right now.")
     }
 
     // MARK: - MatchSummaryView

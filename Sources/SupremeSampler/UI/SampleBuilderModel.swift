@@ -292,6 +292,19 @@ final class SampleBuilderModel {
         openCatalog(at: path)
     }
 
+    // MARK: - Copying the script
+
+    /// Goes up by one on every copy, so the Copy button can flash
+    /// "Copied" however the copy was made (button or Edit menu).
+    private(set) var copyCount = 0
+
+    /// Puts the current script on `clipboard`. Not gated on the count
+    /// like saving: pasting into Script Studio is itself the review step.
+    func copyScript(to clipboard: any ClipboardWriting) {
+        clipboard.write(generatedScript)
+        copyCount += 1
+    }
+
     // MARK: - Saving the script to a file
 
     /// Saving waits for the pre-flight count: "never let a script be

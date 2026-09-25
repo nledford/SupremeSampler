@@ -115,9 +115,11 @@ its core matches `MARKETING_VERSION`, and is published with `--prerelease`.
 
 ## Using a generated script
 
-1. Build a filter and check the match count.
-2. Click **Copy** and paste the script into Photo Supreme's Script Studio, or
-   **Save…** it as a `.psc` file (File › Save Script…, ⌘S).
+1. Build a filter and check the match count at the top of the rules. It warns
+   when fewer photos match than the sample size asks for.
+2. Click **Copy** in the toolbar (Edit › Copy Script, ⇧⌘C) and paste the
+   script into Photo Supreme's Script Studio, or **Save…** it as a `.psc` file
+   (File › Save Script…, ⌘S).
 3. Run it in Script Studio. The sample opens in a new Photo Supreme tab.
 
 Photo Supreme's script interpreter is a limited, closed-source Object Pascal

@@ -35,6 +35,10 @@ struct ContentView: View {
     /// Where ⌘S saves to: the real save panel, or a fake in tests.
     var destinationChooser: any ScriptDestinationChoosing = SavePanelDestinationChooser()
 
+    /// Where Copy puts the script: the real clipboard, or a fake in tests
+    /// (see `ClipboardWriting` for why tests must never use the real one).
+    var clipboard: any ClipboardWriting = SystemClipboard()
+
     /// Plain default init for real use (`MainWindow` in
     /// `SupremeSamplerApp`) -- relies on `model`'s own default
     /// value above. Declared explicitly only
@@ -66,7 +70,8 @@ struct ContentView: View {
     @MainActor
     init(
         model: SampleBuilderModel, columnVisibility: NavigationSplitViewVisibility = .all,
-        showsScript: Binding<Bool> = .constant(true), destinationChooser: (any ScriptDestinationChoosing)? = nil
+        showsScript: Binding<Bool> = .constant(true), destinationChooser: (any ScriptDestinationChoosing)? = nil,
+        clipboard: (any ClipboardWriting)? = nil
     ) {
         _model = State(wrappedValue: model)
         _columnVisibility = State(initialValue: columnVisibility)
@@ -74,6 +79,7 @@ struct ContentView: View {
         // Optional rather than defaulting to the real chooser, for the
         // same default-argument isolation reason as `model` above.
         if let destinationChooser { self.destinationChooser = destinationChooser }
+        if let clipboard { self.clipboard = clipboard }
     }
 
     var body: some View {
@@ -104,7 +110,17 @@ struct ContentView: View {
                         }
                     }
                     .toolbar {
-                        ToolbarItem {
+                        // Copy and Save… with their titles: they're the
+                        // app's two ways out, too important to be bare
+                        // icons. The pane toggle stays an icon, as
+                        // macOS's own sidebar toggles are.
+                        ToolbarItemGroup(placement: .primaryAction) {
+                            ScriptToolbarButtons(model: model, copy: copyScript) {
+                                Task { await saveScript() }
+                            }
+                            .labelStyle(.titleAndIcon)
+                        }
+                        ToolbarItem(placement: .primaryAction) {
                             Button {
                                 showsScript.toggle()
                             } label: {
@@ -114,7 +130,10 @@ struct ContentView: View {
                         }
                     }
                 }
-                .navigationTitle("SupremeSampler")
+                // The open catalog's file name, and the folder it's in:
+                // which catalog the count is about.
+                .navigationTitle(catalogTitle)
+                .navigationSubtitle(catalogFolder)
                 // Here, on the view that's always present while a catalog
                 // is open, rather than in a pane the user can hide. Re-runs
                 // the pre-flight count when the filter changes -- not on
@@ -128,11 +147,12 @@ struct ContentView: View {
                     model.refreshFolderAudit()
                 }
                 // Offers this window's save action to File > Save Script…
-                // (see `SaveScriptCommands`). Registered here, not in the
-                // script pane: the pane can be hidden, and ⌘S should still
-                // work. Scoped to the focused window, so with two windows
-                // open ⌘S saves the front one.
+                // and Edit > Copy Script (see `ScriptCommands`). Registered
+                // here, not in the script pane: the pane can be hidden, and
+                // ⌘S should still work. Scoped to the focused window, so
+                // with two windows open ⌘S saves the front one.
                 .focusedSceneValue(\.saveScriptAction, saveScriptAction)
+                .focusedSceneValue(\.copyScriptAction, ScriptCommandAction(isEnabled: true, perform: copyScript))
             }
         }
         .frame(minWidth: Self.minimumWidth, minHeight: 560)
@@ -169,14 +189,35 @@ struct ContentView: View {
 
     /// File > Save Script…'s action for this window: enabled once the
     /// match count has finished (`SampleBuilderModel.canSaveScript`).
-    var saveScriptAction: SaveScriptAction {
-        SaveScriptAction(isEnabled: model.canSaveScript) {
+    var saveScriptAction: ScriptCommandAction {
+        ScriptCommandAction(isEnabled: model.canSaveScript) {
             Task { await saveScript() }
         }
     }
 
+    /// Copy, from the toolbar or Edit > Copy Script.
+    func copyScript() {
+        model.copyScript(to: clipboard)
+    }
+
+    /// The open catalog's file name, for the window title.
+    var catalogTitle: String {
+        guard let path = model.catalogPath else { return "SupremeSampler" }
+        return URL(fileURLWithPath: path).lastPathComponent
+    }
+
+    /// The folder holding the open catalog, with the home folder as `~`.
+    var catalogFolder: String {
+        model.catalogPath.map(Self.folderDisplay(forCatalogAt:)) ?? ""
+    }
+
+    static func folderDisplay(forCatalogAt path: String) -> String {
+        let folder = URL(fileURLWithPath: path).deletingLastPathComponent().path
+        return (folder as NSString).abbreviatingWithTildeInPath
+    }
+
     /// Opens the save panel in the scripts repo (when it exists) and
-    /// writes the file -- the same as the script pane's Save… button.
+    /// writes the file -- the same as the toolbar's Save… button.
     func saveScript() async {
         await model.saveScript(using: destinationChooser, startingIn: PSCFile.preferredDirectory())
     }
