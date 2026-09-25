@@ -39,6 +39,11 @@ struct ContentView: View {
     /// (see `ClipboardWriting` for why tests must never use the real one).
     var clipboard: any ClipboardWriting = SystemClipboard()
 
+    /// The window's undo stack (Edit > Undo), handed to the model so rule
+    /// edits can register with it. Read from the environment, as
+    /// SwiftUI passes each window its own.
+    @Environment(\.undoManager) private var undoManager
+
     /// Plain default init for real use (`MainWindow` in
     /// `SupremeSamplerApp`) -- relies on `model`'s own default
     /// value above. Declared explicitly only
@@ -165,6 +170,10 @@ struct ContentView: View {
         // reliable "this happened once" signal the way it would be for
         // a class in Rust/TS/Python.
         .task {
+            // Rule edits register with this window's undo stack. A session
+            // restored when a catalog opens clears it again, so Undo never
+            // reaches back past the restore.
+            model.undoManager = undoManager
             model.attemptAutoOpenRecentCatalog()
         }
         // Listens for the menu-bar command rather than being driven

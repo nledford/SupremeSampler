@@ -182,7 +182,68 @@ final class SampleBuilderModel {
     /// Everything in the rule builder: the root "Match all/any/none of"
     /// group and its (possibly nested) rules. Starts empty, which
     /// matches the whole catalog.
-    var rules = RuleGroupDraft()
+    ///
+    /// Every change is undoable (Edit > Undo, when the window has handed
+    /// over its `undoManager`). Undoing
+    /// sets `rules` back, which runs this `didSet` again -- and a change
+    /// registered while undoing is exactly what `UndoManager` files as
+    /// the redo, so redo needs no code of its own.
+    var rules = RuleGroupDraft() {
+        didSet {
+            guard rules != oldValue else { return }
+            if let undoManager {
+                let isUndoOrRedo = undoManager.isUndoing || undoManager.isRedoing
+                if isUndoOrRedo || textEditingDepth == 0 {
+                    registerRulesUndo(restoring: oldValue)
+                }
+                // An undo mid-edit moves the edit's starting point, or
+                // ending the edit would register a step that undoes it.
+                if isUndoOrRedo && textEditingDepth > 0 { rulesBeforeTextEdit = rules }
+            }
+        }
+    }
+
+    /// The window's undo stack, handed over by `ContentView` once the
+    /// window is up. `@ObservationIgnored`: no view draws from it, so
+    /// setting it shouldn't re-render anything.
+    @ObservationIgnored var undoManager: UndoManager?
+
+    private func registerRulesUndo(restoring previous: RuleGroupDraft) {
+        undoManager?.registerUndo(withTarget: self) { model in
+            // Undo runs on the main thread, where this model lives;
+            // `assumeIsolated` states that to the compiler rather than
+            // hopping threads.
+            MainActor.assumeIsolated { model.rules = previous }
+        }
+        undoManager?.setActionName("Rule Change")
+    }
+
+    // MARK: - Text fields and undo
+
+    // While a rule's text field is being edited, AppKit's field editor
+    // keeps its own typing undo on the same stack, and ⌘Z undoes typing
+    // in the field, as in any Mac app. Registering each debounced commit
+    // as well put every edit on the stack twice, so ⌘Z bounced between
+    // old and new text (seen on screen, 2026-09-25). Instead the model
+    // stays out of the way while a field is focused and, when editing
+    // ends, registers the whole edit as one step.
+    @ObservationIgnored private var textEditingDepth = 0
+    @ObservationIgnored private var rulesBeforeTextEdit: RuleGroupDraft?
+
+    /// A rule's text field gained focus.
+    func beginTextEditing() {
+        if textEditingDepth == 0 { rulesBeforeTextEdit = rules }
+        textEditingDepth += 1
+    }
+
+    /// A rule's text field lost focus, its last text already committed.
+    func endTextEditing() {
+        guard textEditingDepth > 0 else { return }
+        textEditingDepth -= 1
+        guard textEditingDepth == 0, let before = rulesBeforeTextEdit else { return }
+        rulesBeforeTextEdit = nil
+        if before != rules { registerRulesUndo(restoring: before) }
+    }
 
     /// Derives the domain filter from the rules being edited -- pure, no
     /// catalog access, trivially testable without a real file. Category

@@ -43,6 +43,9 @@ struct RuleBuilderView: View {
                 .padding()
                 .frame(maxWidth: Self.comfortableWidth, alignment: .topLeading)
                 .frame(maxWidth: .infinity, alignment: .topLeading)
+                .environment(
+                    \.ruleTextEditing,
+                    RuleTextEditingHooks(begin: model.beginTextEditing, end: model.endTextEditing))
             }
         }
     }
