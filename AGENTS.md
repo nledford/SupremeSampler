@@ -38,17 +38,21 @@ Supreme's own Script Studio.
 `@MainActor`) holds all rule-builder state and derives `SampleFilter`
 and the generated script from it; `CatalogPickerView` (file-open
 gate) → a `NavigationSplitView` in `ContentView`: `SampleSettingsView`
-(sidebar: sample size, folder balance, live match count) and, in the
-detail column, `RuleBuilderView` (the rule tree, the wide main pane)
-beside `ScriptPreviewView` (live preview + Copy and Save…), which a
-toolbar button hides. `MainWindow` (in `SupremeSamplerApp.swift`) owns
+(sidebar: sample size, folder balance) and, in the detail column,
+`RuleBuilderView` (the wide main pane: `MatchSummaryView`'s live count
+pinned above the rule tree) beside `ScriptPreviewView` (a read-only,
+unwrapped preview), which a toolbar button hides. Copy and Save… are
+toolbar buttons (`ScriptToolbarButtons`), and the window title is the
+open catalog's file name with its folder as the subtitle. `MainWindow` (in `SupremeSamplerApp.swift`) owns
 that choice as `@SceneStorage`, remembered per window, and passes it
 down as a binding: `@SceneStorage` only works inside a real app scene,
 and tests render `ContentView` on their own. Widths are constants on
-the panes: the window's minimum (`ContentView.minimumWidth`, 1200) is
-the sum of the panes' minimums; a new window is 1520 wide, room for
+the panes: the window's minimum (`ContentView.minimumWidth`, 1160) is
+the sum of the panes' minimums; a new window is 1460 wide, room for
 the sidebar and script at their ideal widths plus
-`RuleBuilderView.comfortableWidth` for the rules. After that, where the
+`RuleBuilderView.comfortableWidth` for the rules, which is also the
+widest the rule boxes and the count grow (past it, a short row's
+"−"/"+" drift far from its controls). After that, where the
 dividers sit is the user's: AppKit saves and restores split-view
 divider positions with the window, over any SwiftUI ideal width.
 
@@ -64,8 +68,53 @@ and re-showing the script doesn't restore the divider position.
 **Anything that must keep working with a pane hidden lives in
 `ContentView`**, the view that's always there while a catalog is open:
 the `.onChange(of: currentFilter)` / `folderBalance` refresh triggers,
-and File > Save Script… (⌘S, `saveScriptAction`), which used to be
-registered by the script pane and would have died with it.
+the Copy / Save… toolbar buttons, File > Save Script… (⌘S,
+`saveScriptAction`) and Edit > Copy Script (⇧⌘C, `copyScriptAction`).
+Save and Copy both used to live in the script pane and would have died
+with it; so did the "Saved X.psc" status, now in `MatchSummaryView`.
+
+**The count says whether the sample will fill.** `SampleForecast`
+(pure) compares the match count with the sample size: full, short
+(fewer match than requested — the script silently returns them all)
+or empty. `MatchSummaryView` spells out the short and empty cases, with
+a "Sample All N" link (`useAllMatches`), and the Save button's tooltip
+repeats it. A count of 0 still saves, deliberately: a pending-deletion
+rule is expected to match nothing between lusia runs.
+
+**Rule edits are undoable, and the session survives relaunch.**
+`SampleBuilderModel.rules`'s `didSet` registers each change with the
+window's `UndoManager` (handed over in `ContentView`'s `.task`, after
+the auto-open, so a restored session isn't undoable) — redo falls out
+of `UndoManager` for free. The same `didSet`, plus `sampleSize`'s and
+`folderBalance`'s, saves a `SavedSession` (JSON, through
+`RecentCatalogStore`, so tests stay off the real `UserDefaults`) under
+the catalog the rules were built for. `adoptSession` runs only after an
+open *succeeds*: a different catalog gets its own saved session or
+empty rules, never the previous catalog's (keyword picks are that
+catalog's GUIDs), and the undo stack is cleared. Restoring before the
+open once let a failed auto-open leave one catalog's rules on screen,
+to be saved against the next catalog opened. One session slot, last
+writer wins across windows. Menu enums save by case name
+(`CaseNameCoding`), not by their label text, so rewording a menu
+doesn't drop sessions; a session that still doesn't decode is dropped.
+Rows also have a context menu (add below / add nested group / remove),
+a hover wash, and the field and operator menus are split into short
+runs by dividers (`menuSections`, covered by `MenuSectionsTests`).
+
+**A focused text field owns undo until it loses focus.** AppKit's field
+editor puts its own typing undo on the window's stack; registering each
+debounced commit as a "Rule Change" as well put every edit there twice,
+and ⌘Z bounced between old and new text (seen on screen, 2026-09-25).
+So `DebouncedTextField` calls `beginTextEditing`/`endTextEditing`
+(through the `ruleTextEditing` environment value): in between, the
+model registers nothing, and at the end it registers the whole edit as
+one step (`TextEditUndoTests`). Undo and redo themselves always
+register, or redo would be lost. When an undo changes a field's text
+from outside, the field ends editing before taking the new text —
+setting it while focused would be recorded as typing. Checked by hand:
+⌘Z inside a focused field undoes typing, ⌘Z after leaving it reverts the
+edit in one step, ⇧⌘Z redoes both, and right-clicking a field still
+shows its Cut/Copy/Paste menu (the row's context menu doesn't take it).
 
 **Saving writes the committed format, not Script Studio's.**
 `PSCFile` (`ScriptGeneration/PSCFile.swift`) encodes UTF-8, LF, no BOM
@@ -81,8 +130,9 @@ is derived — shown only while the on-screen filter, size and folder
 balance still match the saved file. Folder balance is a three-segment
 `Picker` under the sample size (Off / Balanced / Equal), not a toggle
 plus slider: Off is one end of the same scale, and in-between values
-wouldn't mean anything. File > Save Script… (⌘S) reaches the front window via
-`@FocusedValue`/`.focusedSceneValue` (`SaveScriptCommands`), unlike
+wouldn't mean anything. File > Save Script… (⌘S) and Edit > Copy
+Script (⇧⌘C) reach the front window via
+`@FocusedValue`/`.focusedSceneValue` (`ScriptCommands`), unlike
 Open Catalog…'s older global notification.
 
 **The rule builder edits a draft, not the domain filter.**
@@ -399,7 +449,7 @@ or that tapping a real button produces the described effect on screen
 hand" notes elsewhere in this file). Where a view had logic worth a
 *real* assertion (not just "didn't crash"), it was pulled out into a
 directly-callable method first: `CatalogPickerView.handleFileImporterResult`
-and `ScriptPreviewView.copyToClipboard` are both tested with genuine
+and `ContentView.copyScript` are both tested with genuine
 behavioral assertions (the model's resulting state; the actual system
 clipboard's contents), not just executed-without-crashing.
 
