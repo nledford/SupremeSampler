@@ -15,3 +15,7 @@ DerivedData/
 
 # Packaging output (just app / just dmg)
 dist/
+
+# Impeccable design-critique snapshots: local notes, and they quote the
+# real catalog's figures (counts, paths).
+.impeccable/
