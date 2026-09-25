@@ -138,12 +138,17 @@ final class SampleBuilderModel {
                 sampleSize = clamped
                 sampleSizeClampGeneration += 1
             }
+            if sampleSize != oldValue { persistSession() }
         }
     }
 
     /// How the sample spreads across folders (see `FolderBalance`). Off
     /// by default, so a script is the plain random sample unless asked.
-    var folderBalance: FolderBalance = .off
+    var folderBalance: FolderBalance = .off {
+        didSet {
+            if folderBalance != oldValue { persistSession() }
+        }
+    }
 
     /// How the requested sample compares with the matches -- whether the
     /// script will fill it. `nil` until a count has come back; while a
@@ -184,14 +189,14 @@ final class SampleBuilderModel {
     /// matches the whole catalog.
     ///
     /// Every change is undoable (Edit > Undo, when the window has handed
-    /// over its `undoManager`). Undoing
+    /// over its `undoManager`) and saved for the next launch. Undoing
     /// sets `rules` back, which runs this `didSet` again -- and a change
     /// registered while undoing is exactly what `UndoManager` files as
     /// the redo, so redo needs no code of its own.
     var rules = RuleGroupDraft() {
         didSet {
             guard rules != oldValue else { return }
-            if let undoManager {
+            if let undoManager, !isAdoptingSession {
                 let isUndoOrRedo = undoManager.isUndoing || undoManager.isRedoing
                 if isUndoOrRedo || textEditingDepth == 0 {
                     registerRulesUndo(restoring: oldValue)
@@ -200,6 +205,9 @@ final class SampleBuilderModel {
                 // ending the edit would register a step that undoes it.
                 if isUndoOrRedo && textEditingDepth > 0 { rulesBeforeTextEdit = rules }
             }
+            // A session swapped in on open isn't an edit to take back
+            // (the check above), nor worth saving again.
+            persistSession()
         }
     }
 
@@ -242,7 +250,7 @@ final class SampleBuilderModel {
         textEditingDepth -= 1
         guard textEditingDepth == 0, let before = rulesBeforeTextEdit else { return }
         rulesBeforeTextEdit = nil
-        if before != rules { registerRulesUndo(restoring: before) }
+        if before != rules, !isAdoptingSession { registerRulesUndo(restoring: before) }
     }
 
     /// Derives the domain filter from the rules being edited -- pure, no
@@ -303,6 +311,7 @@ final class SampleBuilderModel {
                 catalog = opened
                 catalogPath = path
                 catalogStore.savePath(path)
+                adoptSession(for: path)
                 folderCounts = nil
                 refreshMatchingCount()
                 refreshFolderAudit()
@@ -351,6 +360,54 @@ final class SampleBuilderModel {
         guard catalogPath == nil else { return }
         guard let path = catalogStore.loadPath() else { return }
         openCatalog(at: path)
+    }
+
+    // MARK: - The session saved between launches
+
+    /// Which catalog the rules on screen were built against -- the path
+    /// they're saved under. Separate from `catalogPath` because it only
+    /// changes once `adoptSession` has decided what to do with the rules.
+    private var rulesCatalogPath: String?
+
+    /// Set while `adoptSession` swaps the rules in, so that swap is
+    /// neither undoable nor saved -- saving would overwrite the last
+    /// catalog's session with an empty one just for having looked at
+    /// another catalog.
+    private var isAdoptingSession = false
+
+    /// Called once a catalog has opened. Rules hold keyword picks by the
+    /// catalog's own GUIDs, which mean nothing in another catalog, so
+    /// opening a different catalog never keeps the old rules: it puts
+    /// back that catalog's saved session if there is one, and otherwise
+    /// starts empty. Only after the open succeeds -- restoring earlier
+    /// would leave a catalog's rules on screen when it failed to open,
+    /// ready to be saved against whichever catalog was opened next.
+    /// Undo history goes too: undoing into another catalog's rules would
+    /// bring the same problem back.
+    private func adoptSession(for path: String) {
+        guard rulesCatalogPath != path else { return }
+        isAdoptingSession = true
+        defer { isAdoptingSession = false }
+        if let session = SavedSession.decode(catalogStore.loadSession()), session.catalogPath == path {
+            rules = session.rules
+            sampleSize = session.sampleSize
+            folderBalance = session.folderBalance
+        } else if rulesCatalogPath != nil {
+            rules = RuleGroupDraft()
+        }
+        rulesCatalogPath = path
+        // The old catalog's edits, so Undo can't bring its rules back.
+        undoManager?.removeAllActions(withTarget: self)
+    }
+
+    /// Saves what's being built, against the catalog it was built for.
+    /// Nothing is saved before a catalog is open: a session is only
+    /// worth restoring for the catalog it was built on.
+    private func persistSession() {
+        guard !isAdoptingSession, let rulesCatalogPath else { return }
+        let session = SavedSession(
+            catalogPath: rulesCatalogPath, rules: rules, sampleSize: sampleSize, folderBalance: folderBalance)
+        catalogStore.saveSession(session.encoded())
     }
 
     // MARK: - Copying the script
@@ -521,6 +578,7 @@ final class SampleBuilderModel {
     func injectCatalogForTesting(_ catalog: any SampleBuilderCatalog, propTree: [CatalogPropNode] = []) {
         self.catalog = catalog
         self.catalogPath = "test"
+        self.rulesCatalogPath = "test"
         self.propTree = propTree
     }
 

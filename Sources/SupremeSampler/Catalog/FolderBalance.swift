@@ -14,7 +14,7 @@ import Foundation
 /// `CaseIterable` gives the type an `allCases` array in declaration
 /// order, like iterating a Rust enum with `strum::EnumIter` or
 /// `Object.values()` over a TS enum; the picker lists the modes from it.
-enum FolderBalance: CaseIterable, Hashable {
+enum FolderBalance: CaseIterable, Hashable, Codable {
     /// Every photo equally likely: the plain random sample.
     case off
     /// A folder's weight is the square root of its size, so a folder

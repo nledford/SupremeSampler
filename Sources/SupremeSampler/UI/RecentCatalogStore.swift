@@ -1,6 +1,7 @@
 import Foundation
 
-/// Persists "which catalog file was last opened successfully", across
+/// Persists "which catalog file was last opened successfully", and the
+/// rules last built against it (`SavedSession`, as encoded JSON), across
 /// app launches. A narrow protocol "port" -- same reasoning as
 /// `SampleBuilderCatalog`: `SampleBuilderModel` depends on this
 /// abstraction, not on `UserDefaults` directly, so a test can substitute
@@ -12,6 +13,11 @@ import Foundation
 protocol RecentCatalogStore: Sendable {
     func loadPath() -> String?
     func savePath(_ path: String?)
+    /// The last session's rules, sample size and folder balance, encoded
+    /// by `SavedSession`. Opaque bytes here, so the store never needs to
+    /// know the rule types.
+    func loadSession() -> Data?
+    func saveSession(_ data: Data?)
 }
 
 /// The real implementation, backed by `UserDefaults`. A `struct`, not a
@@ -20,6 +26,7 @@ protocol RecentCatalogStore: Sendable {
 /// `PhotoSupremeCatalog` being a struct around a `DatabasePool`.
 struct UserDefaultsRecentCatalogStore: RecentCatalogStore {
     private static let key = "recentCatalogPath"
+    private static let sessionKey = "recentSession"
 
     private let defaults: UserDefaults
 
@@ -45,6 +52,18 @@ struct UserDefaultsRecentCatalogStore: RecentCatalogStore {
             defaults.removeObject(forKey: Self.key)
         }
     }
+
+    func loadSession() -> Data? {
+        defaults.data(forKey: Self.sessionKey)
+    }
+
+    func saveSession(_ data: Data?) {
+        if let data {
+            defaults.set(data, forKey: Self.sessionKey)
+        } else {
+            defaults.removeObject(forKey: Self.sessionKey)
+        }
+    }
 }
 
 /// Keeps the path in memory only, for SwiftUI previews and tests -- any
@@ -60,9 +79,11 @@ struct UserDefaultsRecentCatalogStore: RecentCatalogStore {
 final class InMemoryRecentCatalogStore: RecentCatalogStore, @unchecked Sendable {
     private let lock = NSLock()
     private var path: String?
+    private var session: Data?
 
-    init(initialPath: String? = nil) {
+    init(initialPath: String? = nil, initialSession: Data? = nil) {
         path = initialPath
+        session = initialSession
     }
 
     func loadPath() -> String? {
@@ -75,5 +96,17 @@ final class InMemoryRecentCatalogStore: RecentCatalogStore, @unchecked Sendable 
         lock.lock()
         defer { lock.unlock() }
         self.path = path
+    }
+
+    func loadSession() -> Data? {
+        lock.lock()
+        defer { lock.unlock() }
+        return session
+    }
+
+    func saveSession(_ data: Data?) {
+        lock.lock()
+        defer { lock.unlock() }
+        session = data
     }
 }

@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import GRDB
 import SwiftUI
 
 @testable import SupremeSampler
@@ -105,4 +106,20 @@ final class HostedWindow {
         window.close()
         try? await Task.sleep(for: .milliseconds(200))
     }
+}
+
+/// A catalog file with just enough schema to open (`PhotoSupremeCatalog`
+/// lists its keyword tree while opening), in the temp folder. The caller
+/// deletes it.
+func makeMinimalCatalogFixture() throws -> String {
+    let path = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".sqlite").path
+    let dbQueue = try DatabaseQueue(path: path)
+    try dbQueue.write { db in
+        try db.execute(sql: "PRAGMA journal_mode = WAL")
+        try db.execute(sql: "CREATE TABLE idCatalogItem (GUID TEXT PRIMARY KEY, Rating INTEGER)")
+        try db.execute(sql: "CREATE TABLE idCatalogItemDefinition (GUID TEXT, CatalogItemGUID TEXT)")
+        try db.execute(sql: "CREATE TABLE idProp (GUID TEXT PRIMARY KEY, ParentGUID TEXT, PropName TEXT)")
+        try db.execute(sql: "CREATE TABLE idPropCategory (GUID TEXT PRIMARY KEY, CategoryName TEXT)")
+    }
+    return path
 }

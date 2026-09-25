@@ -97,8 +97,9 @@ The version lives in `project.yml` (`MARKETING_VERSION`); the git tag is
 
 - **Major** — a change that makes a previously generated `.psc` script select
   different photos or stop compiling in Script Studio; a removed rule kind or
-  operator; a raised macOS floor. (The app persists no filters, so there is no
-  saved-filter contract to break.)
+  operator; a raised macOS floor. (The app keeps only the last session's rules
+  between launches, as a convenience: a session a new version can't read is
+  dropped, not an error, so it is no compatibility contract.)
 - **Minor** — additive: a new rule kind, operator, folder-balance mode, or
   script capability, where existing scripts behave identically.
 - **Patch** — a fix that restores intended behavior without changing the

@@ -11,9 +11,13 @@ import Foundation
 // other. All of these are structs (value types), so an edit anywhere in
 // the tree is a plain mutation of a copy, like editing a Rust struct
 // you own -- no shared references to keep in sync.
+//
+// `Codable` lets the draft be saved between launches (`SavedSession`):
+// the compiler writes the JSON encoding and decoding, like
+// `#[derive(Serialize, Deserialize)]` in Rust.
 
 /// A rating rule as the controls see it: "Rating [comparison] [value]".
-struct RatingRuleDraft: Equatable {
+struct RatingRuleDraft: Equatable, Codable {
     var comparison: RatingComparisonKind = .atLeast
     var value: Int = 3
 
@@ -32,7 +36,7 @@ struct RatingRuleDraft: Equatable {
 /// picked from the tree (each with its whole branch); the rest test the
 /// text of keyword paths (`KeywordPathFilter`). Flat, one plain value per
 /// choice, for the same reason as `PathOperator`.
-enum KeywordOperator: String, CaseIterable, Identifiable, Hashable {
+enum KeywordOperator: String, CaseIterable, Identifiable, Hashable, Codable {
     case isAnyOf = "is any of"
     case isAllOf = "is all of"
     case isNoneOf = "is none of"
@@ -44,6 +48,11 @@ enum KeywordOperator: String, CaseIterable, Identifiable, Hashable {
     case doesNotStartWith = "does not start with"
     case endsWith = "ends with"
     case doesNotEndWith = "does not end with"
+
+    // Saved by case name, not by `rawValue` (the menu label): renaming a
+    // label must not make saved sessions unreadable (see `CaseNameCoding`).
+    init(from decoder: Decoder) throws { self = try CaseNameCoding.decode(Self.self, from: decoder) }
+    func encode(to encoder: Encoder) throws { try CaseNameCoding.encode(self, to: encoder) }
 
     var id: String { rawValue }
 
@@ -71,7 +80,7 @@ enum KeywordOperator: String, CaseIterable, Identifiable, Hashable {
 /// value -- the tree's raw selection (not yet expanded to branches) and
 /// path text. Only the one the operator uses counts; the other is kept so
 /// switching operators back and forth doesn't lose what was entered.
-struct KeywordRuleDraft: Equatable {
+struct KeywordRuleDraft: Equatable, Codable {
     var `operator`: KeywordOperator = .isAnyOf
     var selectedGUIDs: Set<String> = []
     var text: String = ""
@@ -109,13 +118,18 @@ struct KeywordRuleDraft: Equatable {
 /// The path rule's operator picker: each match kind, plain or negated,
 /// as one flat choice -- a `Picker` binds to one plain value, the same
 /// reason `RatingComparisonKind` exists.
-enum PathOperator: String, CaseIterable, Identifiable, Hashable {
+enum PathOperator: String, CaseIterable, Identifiable, Hashable, Codable {
     case contains = "contains"
     case doesNotContain = "does not contain"
     case startsWith = "starts with"
     case doesNotStartWith = "does not start with"
     case endsWith = "ends with"
     case doesNotEndWith = "does not end with"
+
+    // Saved by case name, not by `rawValue` (the menu label): renaming a
+    // label must not make saved sessions unreadable (see `CaseNameCoding`).
+    init(from decoder: Decoder) throws { self = try CaseNameCoding.decode(Self.self, from: decoder) }
+    func encode(to encoder: Encoder) throws { try CaseNameCoding.encode(self, to: encoder) }
 
     var id: String { rawValue }
 
@@ -143,41 +157,41 @@ enum PathOperator: String, CaseIterable, Identifiable, Hashable {
 }
 
 /// A file-path rule as the controls see it: "Path [operator] [text]".
-struct PathRuleDraft: Equatable {
+struct PathRuleDraft: Equatable, Codable {
     var `operator`: PathOperator = .contains
     var text: String = ""
 }
 
 /// A bookmark rule as the controls see it: a match mode and the values
 /// picked from the catalog's list (as the list's strings, "2").
-struct BookmarkRuleDraft: Equatable {
+struct BookmarkRuleDraft: Equatable, Codable {
     var mode: ValueMatchMode = .any
     var selectedValues: Set<String> = []
 }
 
 /// A pending-deletion rule as the controls see it. Defaults to leaving
 /// pending photos out -- the likely use in a sampling tool.
-struct PendingDeletionRuleDraft: Equatable {
+struct PendingDeletionRuleDraft: Equatable, Codable {
     var isPending = false
 }
 
 /// A color-label rule as the controls see it: a match mode and the label
 /// values picked from the catalog's list (`""` is "No label").
-struct LabelRuleDraft: Equatable {
+struct LabelRuleDraft: Equatable, Codable {
     var mode: ValueMatchMode = .any
     var selectedLabels: Set<String> = []
 }
 
 /// A file-type rule as the controls see it: a match mode and the
 /// extensions picked from the catalog's list (`""` is "No extension").
-struct FileTypeRuleDraft: Equatable {
+struct FileTypeRuleDraft: Equatable, Codable {
     var mode: ValueMatchMode = .any
     var selectedTypes: Set<String> = []
 }
 
 /// One row in a group: a rule (see `RuleField`) or a nested group.
-struct RuleDraft: Identifiable, Equatable {
-    enum Content: Equatable {
+struct RuleDraft: Identifiable, Equatable, Codable {
+    enum Content: Equatable, Codable {
         case rating(RatingRuleDraft)
         case keyword(KeywordRuleDraft)
         case path(PathRuleDraft)
@@ -252,7 +266,7 @@ extension RuleDraft {
 
 /// A group of rules being edited: "Match [all/any/none] of:" followed by
 /// its rules, any of which may itself be a group.
-struct RuleGroupDraft: Identifiable, Equatable {
+struct RuleGroupDraft: Identifiable, Equatable, Codable {
     let id: UUID
     var match: GroupMatch
     var rules: [RuleDraft]

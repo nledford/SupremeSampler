@@ -13,12 +13,15 @@ import XCTest
 @MainActor
 final class SavedCatalogPathIsolationTests: XCTestCase {
     private static let savedPathKey = "recentCatalogPath"
+    private static let savedSessionKey = "recentSession"
 
     private var fixturePath: String!
     private var realSavedPathBefore: String?
+    private var realSavedSessionBefore: Data?
 
     override func setUpWithError() throws {
         realSavedPathBefore = UserDefaults.standard.string(forKey: Self.savedPathKey)
+        realSavedSessionBefore = UserDefaults.standard.data(forKey: Self.savedSessionKey)
 
         fixturePath = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString + ".sqlite")
@@ -41,6 +44,11 @@ final class SavedCatalogPathIsolationTests: XCTestCase {
         } else {
             UserDefaults.standard.removeObject(forKey: Self.savedPathKey)
         }
+        if let realSavedSessionBefore {
+            UserDefaults.standard.set(realSavedSessionBefore, forKey: Self.savedSessionKey)
+        } else {
+            UserDefaults.standard.removeObject(forKey: Self.savedSessionKey)
+        }
         try? FileManager.default.removeItem(atPath: fixturePath)
     }
 
@@ -52,5 +60,16 @@ final class SavedCatalogPathIsolationTests: XCTestCase {
 
         XCTAssertEqual(model.catalogPath, fixturePath, "precondition: the open must succeed to reach savePath")
         XCTAssertEqual(UserDefaults.standard.string(forKey: Self.savedPathKey), realSavedPathBefore)
+    }
+
+    func test_givenAModelBuiltTheWayTestsBuildIt_whenEditingRulesOnAnOpenCatalog_thenTheRealAppsSavedSessionIsUntouched() async {
+        let model = SampleBuilderModel.forTesting()
+        model.openCatalog(at: fixturePath)
+        await model.waitForPendingCatalogOpenForTesting()
+
+        model.rules.add(.rating)
+        model.sampleSize = 42
+
+        XCTAssertEqual(UserDefaults.standard.data(forKey: Self.savedSessionKey), realSavedSessionBefore)
     }
 }

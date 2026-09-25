@@ -3,7 +3,7 @@ import Foundation
 /// Whether a photo's single value (its color label, its file type) must
 /// be one of a set of values or none of them. There's no "all of": a
 /// photo has only one label and one file type.
-enum ValueMatchMode: Equatable, Hashable {
+enum ValueMatchMode: Equatable, Hashable, Codable {
     case any
     case none
 }

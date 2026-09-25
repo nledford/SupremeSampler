@@ -8,7 +8,7 @@ import Foundation
 /// A rule that can't be decided for a photo (e.g. a NULL rating) counts
 /// as *not matching*, including underneath "none of" -- so an unrated
 /// photo is never silently dropped from both a rule and its negation.
-enum GroupMatch: Equatable, Hashable {
+enum GroupMatch: Equatable, Hashable, Codable {
     case all
     case any
     case none

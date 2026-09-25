@@ -52,3 +52,16 @@ final class UserDefaultsRecentCatalogStoreTests: XCTestCase {
         XCTAssertEqual(store.loadPath(), "/second/path.cat.db")
     }
 }
+
+extension UserDefaultsRecentCatalogStoreTests {
+    func test_givenASessionSaved_whenLoading_thenReturnsTheSameBytesAndNilClearsThem() {
+        let store = UserDefaultsRecentCatalogStore(defaults: defaults)
+        XCTAssertNil(store.loadSession())
+
+        store.saveSession(Data("{}".utf8))
+        XCTAssertEqual(store.loadSession(), Data("{}".utf8))
+
+        store.saveSession(nil)
+        XCTAssertNil(store.loadSession())
+    }
+}
