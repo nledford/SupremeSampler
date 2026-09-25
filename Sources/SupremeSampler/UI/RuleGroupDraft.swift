@@ -47,6 +47,16 @@ enum KeywordOperator: String, CaseIterable, Identifiable, Hashable {
 
     var id: String { rawValue }
 
+    /// The picker's menu, split by dividers: the tree picks, then each
+    /// text test beside its negation, so no run is longer than three.
+    static let menuSections: [[KeywordOperator]] = [
+        [.isAnyOf, .isAllOf, .isNoneOf],
+        [.contains, .doesNotContain],
+        [.hasPart, .hasNoPart],
+        [.startsWith, .doesNotStartWith],
+        [.endsWith, .doesNotEndWith],
+    ]
+
     /// `true` for the operators that test keywords picked from the tree,
     /// `false` for the ones that test path text.
     var picksKeywords: Bool {
@@ -108,6 +118,13 @@ enum PathOperator: String, CaseIterable, Identifiable, Hashable {
     case doesNotEndWith = "does not end with"
 
     var id: String { rawValue }
+
+    /// The picker's menu: each test beside its negation.
+    static let menuSections: [[PathOperator]] = [
+        [.contains, .doesNotContain],
+        [.startsWith, .doesNotStartWith],
+        [.endsWith, .doesNotEndWith],
+    ]
 
     var kind: PathMatchKind {
         switch self {
@@ -194,6 +211,14 @@ enum RuleField: String, CaseIterable, Identifiable, Hashable {
     case pendingDeletion = "Pending deletion"
 
     var id: String { rawValue }
+
+    /// The field picker's menu, split by dividers: rating and keywords,
+    /// the marks other tools set, then the file itself.
+    static let menuSections: [[RuleField]] = [
+        [.rating, .keyword],
+        [.label, .bookmark, .pendingDeletion],
+        [.path, .fileType],
+    ]
 
     /// A new rule of this field, with default settings.
     var defaultContent: RuleDraft.Content {

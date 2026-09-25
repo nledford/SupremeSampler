@@ -63,6 +63,9 @@ struct RuleGroupEditor: View {
                     bookmarks: bookmarks
                 )
                 .padding(8)
+                // A nested group is its own box, with its own rows to
+                // highlight; only a plain rule row lights up.
+                .modifier(RowHoverHighlight(isEnabled: rule.field != nil))
             }
         }
         .ruleBox()
@@ -88,12 +91,26 @@ struct RuleGroupEditor: View {
                 RemoveRuleButton(accessibilityLabel: "Remove group", action: onRemove)
             }
             // The header's "+" appends inside this group.
-            AddRuleMenu(accessibilityLabel: depth == 0 ? "Add rule" : "Add rule to group") { choice in
-                switch choice {
-                case .rule: group.add(group.fieldForNewRule)
-                case .group: group.addGroup()
-                }
+            AddRuleMenu(accessibilityLabel: depth == 0 ? "Add rule" : "Add rule to group", onAdd: addToGroup)
+        }
+        .contentShape(Rectangle())
+        // Right-click anywhere on the header: the same actions as its
+        // buttons, named, for anyone who never finds Option-click.
+        .contextMenu {
+            Button("Add Rule") { addToGroup(.rule) }
+            Button("Add Nested Group") { addToGroup(.group) }
+            if let onRemove {
+                Divider()
+                Button("Remove Group", role: .destructive, action: onRemove)
             }
+        }
+    }
+
+    /// The header's "+": appends inside this group.
+    private func addToGroup(_ choice: AddRuleMenu.Choice) {
+        switch choice {
+        case .rule: group.add(group.fieldForNewRule)
+        case .group: group.addGroup()
         }
     }
 
@@ -111,8 +128,8 @@ struct RuleGroupEditor: View {
     /// "matches nothing" for an empty group isn't obvious.
     private var emptyGroupHint: String {
         switch group.match {
-        case .all, .none: return "No rules yet — matches every photo."
-        case .any: return "No rules yet — matches no photos."
+        case .all, .none: return "No rules yet, so this matches every photo. Click + to add one."
+        case .any: return "No rules yet, so this matches no photos. Click + to add one."
         }
     }
 
@@ -191,6 +208,13 @@ struct RuleRow: View {
                 line(field: field, stacked: false)
                 line(field: field, stacked: true)
             }
+            .contentShape(Rectangle())
+            .contextMenu {
+                Button("Add Rule Below") { actions.add(.rule) }
+                Button("Add Nested Group Below") { actions.add(.group) }
+                Divider()
+                Button("Remove Rule", role: .destructive, action: actions.remove)
+            }
         }
     }
 
@@ -222,9 +246,7 @@ struct RuleRow: View {
 
     private func fieldPicker(_ field: RuleField) -> some View {
         Picker("Field", selection: Binding(get: { field }, set: actions.changeField)) {
-            ForEach(RuleField.allCases) { field in
-                Text(field.rawValue).tag(field)
-            }
+            SectionedPickerItems(sections: RuleField.menuSections) { Text($0.rawValue) }
         }
         .labelsHidden()
         .fixedSize()
@@ -346,9 +368,7 @@ struct KeywordRuleControls: View {
 
     var body: some View {
         Picker("Match", selection: $rule.operator) {
-            ForEach(KeywordOperator.allCases) { keywordOperator in
-                Text(keywordOperator.rawValue).tag(keywordOperator)
-            }
+            SectionedPickerItems(sections: KeywordOperator.menuSections) { Text($0.rawValue) }
         }
         .labelsHidden()
         .fixedSize()
@@ -458,9 +478,7 @@ struct PathRuleControls: View {
 
     var body: some View {
         Picker("Match", selection: $rule.operator) {
-            ForEach(PathOperator.allCases) { pathOperator in
-                Text(pathOperator.rawValue).tag(pathOperator)
-            }
+            SectionedPickerItems(sections: PathOperator.menuSections) { Text($0.rawValue) }
         }
         .labelsHidden()
         .fixedSize()
@@ -648,8 +666,8 @@ struct AddRuleMenu: View {
         // `primaryAction`; the small arrow beside it opens the menu -- a
         // split button.
         Menu {
-            Button("Add rule") { onAdd(.rule) }
-            Button("Add nested group") { onAdd(.group) }
+            Button("Add Rule") { onAdd(.rule) }
+            Button("Add Nested Group") { onAdd(.group) }
         } label: {
             Image(systemName: "plus.circle")
                 .accessibilityLabel(accessibilityLabel)
@@ -661,8 +679,41 @@ struct AddRuleMenu: View {
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
-        .help("Add a rule (Option-click for a nested group)")
+        .help("Add a rule. For a nested group, Option-click or use the arrow.")
         .accessibilityLabel(accessibilityLabel)
+    }
+}
+
+/// A picker's options in groups with a divider between each, so a long
+/// menu reads as a few short runs. Each option is tagged with its own
+/// value, as `Picker` needs. Generic over the option type, like a Rust
+/// fn over `T: Hashable`.
+struct SectionedPickerItems<Option: Hashable, ItemLabel: View>: View {
+    let sections: [[Option]]
+    @ViewBuilder let label: (Option) -> ItemLabel
+
+    var body: some View {
+        ForEach(sections.indices, id: \.self) { index in
+            if index > 0 { Divider() }
+            ForEach(sections[index], id: \.self) { option in
+                label(option).tag(option)
+            }
+        }
+    }
+}
+
+/// A faint wash behind a rule row under the pointer, tying the row's
+/// "−" and "+" at the far right to the controls they act on. A
+/// `ViewModifier` is a reusable bundle of modifiers with its own state,
+/// like a React hook that also wraps markup.
+struct RowHoverHighlight: ViewModifier {
+    let isEnabled: Bool
+    @State private var isHovered = false
+
+    func body(content: Content) -> some View {
+        content
+            .background(isEnabled && isHovered ? Color.primary.opacity(0.05) : Color.clear)
+            .onHover { isHovered = $0 }
     }
 }
 

@@ -75,3 +75,24 @@ final class UseAllMatchesTests: XCTestCase {
         XCTAssertEqual(model.sampleForecast?.kind, .empty)
     }
 }
+
+/// The dividers in the rule pickers' menus must neither drop nor repeat
+/// an option: a missing one could never be picked again.
+final class MenuSectionsTests: XCTestCase {
+    private func assertCoversEveryCaseOnce<T: CaseIterable & Hashable>(_ sections: [[T]], file: StaticString = #filePath, line: UInt = #line) {
+        let flat = sections.flatMap { $0 }
+        XCTAssertEqual(flat.count, T.allCases.count, "an option is missing or repeated", file: file, line: line)
+        XCTAssertEqual(Set(flat), Set(T.allCases), file: file, line: line)
+        XCTAssertFalse(sections.contains { $0.isEmpty }, "an empty section draws two dividers in a row", file: file, line: line)
+    }
+
+    func test_givenEachSectionedPicker_whenListingItsMenu_thenEveryOptionAppearsExactlyOnce() {
+        assertCoversEveryCaseOnce(RuleField.menuSections)
+        assertCoversEveryCaseOnce(KeywordOperator.menuSections)
+        assertCoversEveryCaseOnce(PathOperator.menuSections)
+    }
+
+    func test_givenTheKeywordMenu_whenSectioned_thenNoRunIsLongerThanThree() {
+        XCTAssertLessThanOrEqual(KeywordOperator.menuSections.map(\.count).max() ?? 0, 3)
+    }
+}
