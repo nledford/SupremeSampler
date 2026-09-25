@@ -396,6 +396,72 @@ final class ViewRenderingTests: XCTestCase {
         XCTAssertNotNil(failed.saveErrorMessage)
         _ = ScriptPreviewView(model: failed, destinationChooser: FakeDestinationChooser(answer: nil)).body
     }
+
+    // MARK: - MatchSummaryView
+
+    private func countedModel(matching count: Int = 0) async -> SampleBuilderModel {
+        let model = SampleBuilderModel.forTesting()
+        model.injectCatalogForTesting(FakeCatalogForViewTests(matchCount: count))
+        model.refreshMatchingCount()
+        await model.waitForPendingMatchCountForTesting()
+        return model
+    }
+
+    func test_givenEachCountState_whenBuildingMatchSummaryView_thenBodyDoesNotCrash() async {
+        _ = MatchSummaryView(model: SampleBuilderModel.forTesting()).body  // not counted
+
+        for count in [0, 2, 1_000_000] {
+            let model = await countedModel(matching: count)
+            _ = MatchSummaryView(model: model).body  // empty, short, full
+        }
+
+        let counting = await countedModel(matching: 5)
+        counting.injectCatalogForTesting(FakeCatalogForViewTests(matchDelayNanoseconds: 50_000_000))
+        counting.refreshMatchingCount()
+        XCTAssertTrue(counting.isCountingMatches)
+        _ = MatchSummaryView(model: counting).body  // an old count, dimmed
+
+        let failed = await countedModel()
+        failed.reportPickerFailure(NSError(domain: "test", code: 1))
+        _ = MatchSummaryView(model: failed).body  // the error, with Try Again
+    }
+
+    func test_givenASavedOrFailedSave_whenBuildingMatchSummaryView_thenBodyDoesNotCrash() async {
+        let saved = await countedModel()
+        let destination = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".psc")
+        defer { try? FileManager.default.removeItem(at: destination) }
+        await saved.saveScript(using: FakeDestinationChooser(answer: destination), startingIn: nil)
+        XCTAssertNotNil(saved.lastSavedScriptURL)
+        _ = MatchSummaryView(model: saved).body
+
+        let failed = await countedModel()
+        await failed.saveScript(
+            using: FakeDestinationChooser(answer: URL(fileURLWithPath: "/nonexistent/\(UUID().uuidString)/A.psc")),
+            startingIn: nil)
+        XCTAssertNotNil(failed.saveErrorMessage)
+        _ = MatchSummaryView(model: failed).body
+    }
+
+    func test_givenCounts_whenWritingTheHeadline_thenItReadsAsASentence() {
+        XCTAssertEqual(MatchSummaryView.headlineText(count: 0), "No photos match")
+        XCTAssertEqual(MatchSummaryView.headlineText(count: 1), "1 photo matches")
+        // `.formatted()` follows the machine's locale, so the expectation
+        // does too, rather than assuming "," as the thousands separator.
+        XCTAssertEqual(MatchSummaryView.headlineText(count: 245_112), "\(245_112.formatted()) photos match")
+    }
+
+    func test_givenEachFolderBalance_whenDescribingAFullSample_thenTheBalanceIsNamed() {
+        let forecast = SampleForecast(matching: 50_000, requested: 10_000)
+        XCTAssertEqual(
+            MatchSummaryView.fullSampleText(forecast: forecast, balance: .off),
+            "The script will pick \(10_000.formatted()) of them at random.")
+        XCTAssertEqual(
+            MatchSummaryView.fullSampleText(forecast: forecast, balance: .balanced),
+            "The script will pick \(10_000.formatted()) of them at random, balanced across folders.")
+        XCTAssertEqual(
+            MatchSummaryView.fullSampleText(forecast: forecast, balance: .equal),
+            "The script will pick \(10_000.formatted()) of them at random, spread equally across folders.")
+    }
 }
 
 private final class FakeClipboard: ClipboardWriting, @unchecked Sendable {

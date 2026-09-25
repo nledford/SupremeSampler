@@ -145,6 +145,22 @@ final class SampleBuilderModel {
     /// by default, so a script is the plain random sample unless asked.
     var folderBalance: FolderBalance = .off
 
+    /// How the requested sample compares with the matches -- whether the
+    /// script will fill it. `nil` until a count has come back; while a
+    /// newer count runs, it describes the previous one.
+    var sampleForecast: SampleForecast? {
+        matchingCount.map { SampleForecast(matching: $0, requested: sampleSize) }
+    }
+
+    /// Shrinks the sample to exactly the photos that match -- the one-
+    /// click answer to a sample that would come up short.
+    /// Does nothing while a newer count runs: the count on screen is for
+    /// the previous rules then.
+    func useAllMatches() {
+        guard !isCountingMatches, let matchingCount, matchingCount >= 1 else { return }
+        sampleSize = matchingCount
+    }
+
     // The folder audit: per-folder counts for one filter, fetched in the
     // background while folder balance is on. Kept with the filter they
     // were counted for, so a changed filter never shows stale numbers.
@@ -282,7 +298,10 @@ final class SampleBuilderModel {
     /// generated for a filter the user hasn't seen validated against real
     /// data" (PRODUCT.md), and a file is the artifact that outlives this
     /// session. (Copy isn't gated the same way -- pasting into Script
-    /// Studio is itself the review step.)
+    /// Studio is itself the review step.) A count of 0 still saves: a
+    /// rule like "pending deletion" is expected to match nothing between
+    /// runs of the tool that sets it, and the window already says the
+    /// sample will be empty.
     var canSaveScript: Bool {
         catalog != nil && !isCountingMatches && matchingCount != nil
     }

@@ -1,9 +1,10 @@
 import SwiftUI
 
-/// The sidebar: sample size, folder balance, and the live pre-flight
-/// match count. The rules themselves are the main pane (`RuleBuilderView`).
+/// The sidebar: sample size and folder balance. The rules and the live
+/// match count are the main pane (`RuleBuilderView`).
 struct SampleSettingsView: View {
     static let minimumWidth: CGFloat = 260
+    static let idealWidth: CGFloat = 300
 
     // `@Bindable` is what lets `$model.sampleSize` etc. work below: it
     // derives a two-way `Binding` for each stored property of an
@@ -43,7 +44,7 @@ struct SampleSettingsView: View {
                         TextField(
                             "Sample size",
                             value: $model.sampleSize,
-                            format: .number.grouping(.never)
+                            format: .number
                         )
                         .labelsHidden()
                         .textFieldStyle(.roundedBorder)
@@ -91,17 +92,9 @@ struct SampleSettingsView: View {
 
                 folderBalanceRow
             }
-
-            Section("Preview") {
-                matchCountRow
-                if let errorMessage = model.errorMessage {
-                    Label(errorMessage, systemImage: "exclamationmark.triangle")
-                        .foregroundStyle(.red)
-                }
-            }
         }
         .formStyle(.grouped)
-        .navigationSplitViewColumnWidth(min: Self.minimumWidth, ideal: 300)
+        .navigationSplitViewColumnWidth(min: Self.minimumWidth, ideal: Self.idealWidth)
     }
 
     /// One segmented control rather than a toggle plus a slider: "Off" is
@@ -181,23 +174,6 @@ struct SampleSettingsView: View {
         case .off: return "Every photo equally likely, so big folders dominate."
         case .balanced: return "Folders weighted by the square root of their size."
         case .equal: return "Every folder equally likely, whatever its size."
-        }
-    }
-
-    @ViewBuilder
-    private var matchCountRow: some View {
-        if model.isCountingMatches {
-            HStack(spacing: 6) {
-                ProgressView()
-                    .controlSize(.small)
-                Text("Counting matches…")
-                    .foregroundStyle(.secondary)
-            }
-        } else if let count = model.matchingCount {
-            Label("\(count) photo\(count == 1 ? "" : "s") match", systemImage: "checkmark.circle")
-        } else {
-            Text("—")
-                .foregroundStyle(.secondary)
         }
     }
 }

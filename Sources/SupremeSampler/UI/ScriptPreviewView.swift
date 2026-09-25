@@ -44,7 +44,6 @@ struct ScriptPreviewView: View {
                 .help(model.canSaveScript ? "Save as a .psc file" : "Available once the match count has finished")
             }
 
-            saveStatus
 
             ScrollView {
                 Text(model.generatedScript)
@@ -59,27 +58,6 @@ struct ScriptPreviewView: View {
         .padding()
         // ⌘S is registered by `ContentView`, not here: this pane can be
         // hidden, and a hidden pane's views are gone.
-    }
-
-    /// What happened to the last save: the file it went to (while the
-    /// script on screen still matches it), or why it failed.
-    @ViewBuilder
-    private var saveStatus: some View {
-        if let url = model.lastSavedScriptURL {
-            HStack(spacing: 6) {
-                Label("Saved \(url.lastPathComponent)", systemImage: "checkmark.circle")
-                    .foregroundStyle(.secondary)
-                Button("Show in Finder") {
-                    NSWorkspace.shared.activateFileViewerSelecting([url])
-                }
-                .buttonStyle(.link)
-            }
-            .font(.callout)
-        } else if let message = model.saveErrorMessage {
-            Label(message, systemImage: "exclamationmark.triangle")
-                .foregroundStyle(.red)
-                .font(.callout)
-        }
     }
 
     /// Opens the save panel in the scripts repo (when it exists) and
