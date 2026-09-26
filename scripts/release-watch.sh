@@ -13,8 +13,10 @@
 #   2   the tag doesn't exist locally
 #   3   a required workflow never started
 #   4   a run failed
-#   5   the release never appeared, or is missing an asset
-#   6   a run's result couldn't be read from GitHub
+#   5   the release never appeared (gh's last error is shown), or is
+#       missing an asset
+#   6   GitHub couldn't be read: listing the runs failed on every check,
+#       or a run's result couldn't be read
 #   64  usage error
 #
 # Test seams: GH (the gh binary), RELEASE_WATCH_INTERVAL (seconds between
@@ -39,6 +41,10 @@ usage() {
 [ "$#" -eq 1 ] || usage
 tag="$1"
 
+# gh's stderr from the latest call, kept to explain a timeout.
+err_file="$(mktemp)"
+trap 'rm -f "$err_file"' EXIT
+
 sha="$(git rev-list -n 1 "$tag" 2>/dev/null)" || {
     echo "no such tag here: $tag (fetch tags, or check the name)" >&2
     exit 2
@@ -47,17 +53,29 @@ sha="$(git rev-list -n 1 "$tag" 2>/dev/null)" || {
 # 1. Wait for every required workflow to have a run on the tag's commit.
 # Plain strings, not arrays: macOS's bash 3.2 errors on an empty array
 # under `set -u`.
+# A failed listing (network, API) is another check to retry, not the end
+# of the watch: under `set -e` a bare `runs="$(...)"` would exit 1 here.
+list_error=""
 attempt=0
 while :; do
     attempt=$((attempt + 1))
-    runs="$("$gh_cmd" run list --commit "$sha" \
-        --json databaseId,workflowName --jq '.[] | "\(.databaseId) \(.workflowName)"')"
+    if runs="$("$gh_cmd" run list --commit "$sha" \
+        --json databaseId,workflowName --jq '.[] | "\(.databaseId) \(.workflowName)"' 2>"$err_file")"; then
+        list_error=""
+    else
+        runs=""
+        list_error="$(cat "$err_file")"
+    fi
     missing=""
     for workflow in $required_workflows; do
         printf '%s\n' "$runs" | grep -q " $workflow\$" || missing="$missing $workflow"
     done
     [ -z "$missing" ] && break
     if [ "$attempt" -ge "$attempts" ]; then
+        if [ -n "$list_error" ] && [ -z "$runs" ]; then
+            echo "couldn't list runs for $tag ($sha) after $attempts checks; gh said: $list_error" >&2
+            exit 6
+        fi
         echo "no run started for$missing on $tag ($sha) after $attempts checks" >&2
         exit 3
     fi
@@ -102,11 +120,14 @@ fi
 attempt=0
 while :; do
     attempt=$((attempt + 1))
-    if assets="$("$gh_cmd" release view "$tag" --json assets --jq '.assets[].name' 2>/dev/null)"; then
+    if assets="$("$gh_cmd" release view "$tag" --json assets --jq '.assets[].name' 2>"$err_file")"; then
         break
     fi
     if [ "$attempt" -ge "$attempts" ]; then
-        echo "no GitHub release for $tag after $attempts checks" >&2
+        # "release not found" usually just means not published yet, but
+        # an auth failure or outage looks the same from here: show gh's
+        # own words rather than guessing.
+        echo "no GitHub release for $tag after $attempts checks; gh said: $(cat "$err_file")" >&2
         exit 5
     fi
     sleep "$interval"

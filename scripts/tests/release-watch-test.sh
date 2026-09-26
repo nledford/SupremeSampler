@@ -21,12 +21,16 @@ scenario=0
 # The fake gh. State lives in $FAKE_GH_STATE:
 #   runs            "<id> <workflow>" lines that `run list` prints
 #   runs-delay      `run list` calls that print nothing first (default 0)
+#   list-fail       `run list` calls that fail first, as gh does on a
+#                   network or API error (default 0; "all" = every call)
 #   watch-<id>      exit status of `run watch <id>` (default 0)
 #   conclusion-<id> what `run view <id>` reports (default success);
 #                   "__ERROR__" makes `run view` itself fail
 #   watched         each `run watch` ID argument, as "[<arg>]" (written)
 #   assets          asset names `release view` prints; absent = no release
 #   release-delay   `release view` calls that fail first (default 0)
+#   release-error   what a failing `release view` prints (default
+#                   "release not found")
 # It logs every call's arguments to calls.log.
 cat > "$tmp/gh" <<'FAKE'
 #!/usr/bin/env bash
@@ -41,6 +45,11 @@ count() {  # count <name>: bump and print a call counter
 case "$1 $2" in
     "run list")
         n="$(count list)"
+        fails="$(cat "$state/list-fail" 2>/dev/null || echo 0)"
+        if [ "$fails" = all ] || [ "$n" -le "$fails" ]; then
+            echo "error connecting to api.github.com" >&2
+            exit 1
+        fi
         if [ "$n" -gt "$(cat "$state/runs-delay" 2>/dev/null || echo 0)" ]; then
             cat "$state/runs" 2>/dev/null
         fi
@@ -60,7 +69,7 @@ case "$1 $2" in
         n="$(count release)"
         if [ ! -f "$state/assets" ] \
             || [ "$n" -le "$(cat "$state/release-delay" 2>/dev/null || echo 0)" ]; then
-            echo "release not found" >&2
+            { cat "$state/release-error" 2>/dev/null || echo "release not found"; } >&2
             exit 1
         fi
         cat "$state/assets"
@@ -199,6 +208,24 @@ watch v0.3.1
 assert_status 3 test_givenAWorkflowThatNeverStarts_whenWatching_thenFailsNamingIt
 assert_stderr_contains 'Release' test_givenAWorkflowThatNeverStarts_whenWatching_thenFailsNamingIt
 
+# --- Scenario 6b: a gh error while listing runs is retried, not fatal -----
+# Adversarial review, 2026-09-26: one failed `gh run list` ended the watch
+# with exit 1 (not in the contract) instead of polling again.
+given_release v0.3.1
+printf '%s\n' "$both_runs" > "$state/runs"
+echo 2 > "$state/list-fail"
+printf '%s\n' "$full_assets" > "$state/assets"
+watch v0.3.1
+assert_status 0 test_givenGhFailsWhileListingRunsAtFirst_whenWatching_thenItKeepsPolling
+
+# --- Scenario 6c: gh failing every time says so, with gh's error ----------
+given_release v0.3.1
+echo all > "$state/list-fail"
+watch v0.3.1
+assert_status 6 test_givenGhFailsEveryTimeItListsRuns_whenWatching_thenItReportsGitHubCouldNotBeRead
+assert_stderr_contains 'error connecting to api.github.com' \
+    test_givenGhFailsEveryTimeItListsRuns_whenWatching_thenItReportsGitHubCouldNotBeRead
+
 # --- Scenario 7: a release published late is waited for --------------------
 given_release v0.3.1
 printf '%s\n' "$both_runs" > "$state/runs"
@@ -213,6 +240,17 @@ printf '%s\n' "$both_runs" > "$state/runs"
 watch v0.3.1
 assert_status 5 test_givenNoReleaseEverAppears_whenWatching_thenFails
 assert_stderr_contains 'v0.3.1' test_givenNoReleaseEverAppears_whenWatching_thenFails
+
+# --- Scenario 8b: gh's own error is shown when the release never appears --
+# An auth failure or outage used to be retried silently, then reported
+# only as "no GitHub release".
+given_release v0.3.1
+printf '%s\n' "$both_runs" > "$state/runs"
+echo 'HTTP 401: Bad credentials' > "$state/release-error"
+watch v0.3.1
+assert_status 5 test_givenGhErrorsWhileReadingTheRelease_whenItNeverAppears_thenTheErrorIsShown
+assert_stderr_contains 'HTTP 401: Bad credentials' \
+    test_givenGhErrorsWhileReadingTheRelease_whenItNeverAppears_thenTheErrorIsShown
 
 # --- Scenario 9: missing assets fail, each one named ------------------------
 given_release v0.3.1

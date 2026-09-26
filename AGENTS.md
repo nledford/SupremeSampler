@@ -180,9 +180,13 @@ agreed example table. The two rules expected on every script (pending
 deletion excluded, bookmark none of Hidden) are left out at the top of an
 "all of" root. Keywords are named by their own name, not their path;
 text is folded to ASCII; the sample size is left out; past ~60
-characters the root's remaining rules become `Etc`. Nothing left to name
-gives `PSCFile.suggestedFileName` -- never `RandomCatalogSample.psc`, the
-reference script a default save must not overwrite. While the rules
+characters the rest becomes `Etc` -- at a rule boundary for an "all of"
+root, otherwise where a word begins -- for every shape of filter, since
+an uncapped "any of" root once produced a 538-byte name, past macOS's
+255-byte limit (review, 2026-09-26). Nothing left to name gives
+`PSCFile.suggestedFileName` -- never `RandomCatalogSample.psc`, in any
+letter case (the scripts volume ignores case), the reference script a
+default save must not overwrite. While the rules
 still match the last save, `suggestedScriptFileName` offers that file's
 name instead, so re-saving keeps the user's own name.
 
@@ -721,7 +725,10 @@ checks its assets; exit codes say which step failed (see the script).
 `gh run watch` also exits non-zero on its own network/API errors, so a
 non-zero watch is checked against the run's recorded conclusion: a gh
 hiccup on a passing run is a note, not a failure (seen once on v0.3.1,
-not reproduced in six reruns).
+not reproduced in six reruns). Likewise a failed `gh run list` is
+retried like any other check (under `set -e` it once ended the watch
+with an undocumented exit 1), and a timeout shows gh's last error, so an
+auth failure isn't passed off as "no release yet".
 It exists because an improvised watcher, run in zsh (the agent's shell
 here), passed two run IDs as one word -- zsh doesn't split unquoted
 variables -- and reported a false failure for v0.3.1 (2026-09-26). The
