@@ -35,30 +35,102 @@ enum PascalTokenizer {
     ]
 
     static func tokenize(_ source: String) -> [PascalToken] {
-        // Walks Unicode scalars (code points). Their indices are also valid
-        // indices into `source`, so each token slices the original string
-        // directly. Swift strings can't be indexed by integer offset (like
-        // Rust's `str`, but stricter): positions are opaque `String.Index`
-        // values, advanced with `index(after:)`.
-        let scalars = source.unicodeScalars
-        var tokens: [PascalToken] = []
-        var plainStart: String.Index?
-        var i = scalars.startIndex
+        var scanner = Scanner(source: source)
+        return scanner.run()
+    }
 
-        func peek(_ offset: Int) -> Unicode.Scalar? {
-            guard let j = scalars.index(i, offsetBy: offset, limitedBy: scalars.endIndex),
+    /// One pass over the source, emitting one token per run.
+    ///
+    /// A `struct` with `mutating` methods rather than one long function
+    /// with nested closures: the cursor and the pending plain-text start
+    /// are the only state, and each token kind's scan is then a small
+    /// function of its own. (A Swift `struct` is a value type -- like a
+    /// Rust struct, not a JS/Python class -- so `mutating` is how a
+    /// method says it changes the receiver.)
+    private struct Scanner {
+        let source: String
+        /// Walks Unicode scalars (code points). Their indices are also
+        /// valid indices into `source`, so each token slices the original
+        /// string directly. Swift strings can't be indexed by integer
+        /// offset (like Rust's `str`, but stricter): positions are opaque
+        /// `String.Index` values, advanced with `index(after:)`.
+        let scalars: String.UnicodeScalarView
+        var i: String.Index
+        /// Where the current run of plain text began, if one is open.
+        var plainStart: String.Index?
+        var tokens: [PascalToken] = []
+
+        init(source: String) {
+            self.source = source
+            self.scalars = source.unicodeScalars
+            self.i = source.unicodeScalars.startIndex
+        }
+
+        mutating func run() -> [PascalToken] {
+            while i < scalars.endIndex {
+                let start = i
+                switch tokenStart(at: i) {
+                case .lineComment:
+                    scanLineComment()
+                    emit(.comment, from: start)
+                case .braceComment:
+                    skip(past: "}")
+                    emit(.comment, from: start)
+                case .parenComment:
+                    i = scalars.index(i, offsetBy: 2)
+                    skip(past: "*)")
+                    emit(.comment, from: start)
+                case .string:
+                    scanString()
+                    emit(.string, from: start)
+                case .number:
+                    scanNumber()
+                    emit(.number, from: start)
+                case .identifier:
+                    scanIdentifier(from: start)
+                case .plain:
+                    if plainStart == nil { plainStart = start }
+                    i = scalars.index(after: i)
+                }
+            }
+            if let plain = plainStart {
+                tokens.append(PascalToken(kind: .plain, text: source[plain...]))
+            }
+            return tokens
+        }
+
+        /// What the run starting at `index` is, decided by its first
+        /// scalar (and, for the two-character openers, the one after).
+        private enum TokenStart {
+            case lineComment, braceComment, parenComment, string, number, identifier, plain
+        }
+
+        private func tokenStart(at index: String.Index) -> TokenStart {
+            let c = scalars[index]
+            if c == "/" && peek(1, from: index) == "/" { return .lineComment }
+            if c == "{" { return .braceComment }
+            if c == "(" && peek(1, from: index) == "*" { return .parenComment }
+            if c == "'" { return .string }
+            if isDigit(c) { return .number }
+            if isIdentifierStart(c) { return .identifier }
+            return .plain
+        }
+
+        /// The scalar `offset` past `index`, or `nil` at or past the end.
+        private func peek(_ offset: Int, from index: String.Index) -> Unicode.Scalar? {
+            guard let j = scalars.index(index, offsetBy: offset, limitedBy: scalars.endIndex),
                   j < scalars.endIndex else { return nil }
             return scalars[j]
         }
 
         /// Advances `i` to just past `terminator`, or to the end of the
         /// source if it never appears.
-        func skip(past terminator: String) {
+        private mutating func skip(past terminator: String) {
             let rest = source[i...]
             i = rest.range(of: terminator)?.upperBound ?? source.endIndex
         }
 
-        func emit(_ kind: PascalToken.Kind, from start: String.Index) {
+        private mutating func emit(_ kind: PascalToken.Kind, from start: String.Index) {
             if let plain = plainStart {
                 tokens.append(PascalToken(kind: .plain, text: source[plain..<start]))
                 plainStart = nil
@@ -66,61 +138,48 @@ enum PascalTokenizer {
             tokens.append(PascalToken(kind: kind, text: source[start..<i]))
         }
 
-        while i < scalars.endIndex {
-            let start = i
-            let c = scalars[i]
+        /// `//` up to, not including, the line break.
+        private mutating func scanLineComment() {
+            while i < scalars.endIndex && scalars[i] != "\n" { i = scalars.index(after: i) }
+        }
 
-            if c == "/" && peek(1) == "/" {
-                // Line comment: up to, not including, the line break.
-                while i < scalars.endIndex && scalars[i] != "\n" { i = scalars.index(after: i) }
-                emit(.comment, from: start)
-            } else if c == "{" {
-                skip(past: "}")
-                emit(.comment, from: start)
-            } else if c == "(" && peek(1) == "*" {
-                i = scalars.index(i, offsetBy: 2)
-                skip(past: "*)")
-                emit(.comment, from: start)
-            } else if c == "'" {
-                // A doubled quote is an escaped quote, inside the string.
-                i = scalars.index(after: i)
-                while i < scalars.endIndex && scalars[i] != "\n" {
-                    if scalars[i] == "'" {
-                        if peek(1) == "'" {
-                            i = scalars.index(i, offsetBy: 2)
-                            continue
-                        }
-                        i = scalars.index(after: i)
-                        break
+        /// `'` to just past the closing quote, or the end of the line. A
+        /// doubled quote is an escaped quote, inside the string.
+        private mutating func scanString() {
+            i = scalars.index(after: i)
+            while i < scalars.endIndex && scalars[i] != "\n" {
+                if scalars[i] == "'" {
+                    if peek(1, from: i) == "'" {
+                        i = scalars.index(i, offsetBy: 2)
+                        continue
                     }
                     i = scalars.index(after: i)
+                    break
                 }
-                emit(.string, from: start)
-            } else if isDigit(c) {
-                while i < scalars.endIndex && isDigit(scalars[i]) { i = scalars.index(after: i) }
-                if let dot = peek(0), dot == ".", let next = peek(1), isDigit(next) {
-                    i = scalars.index(after: i)
-                    while i < scalars.endIndex && isDigit(scalars[i]) { i = scalars.index(after: i) }
-                }
-                emit(.number, from: start)
-            } else if isIdentifierStart(c) {
-                // A whole identifier at once, so `AEnd` or `ROWID2` never
-                // yields a keyword or number from its middle.
-                while i < scalars.endIndex && isIdentifierPart(scalars[i]) { i = scalars.index(after: i) }
-                if keywords.contains(source[start..<i].lowercased()) {
-                    emit(.keyword, from: start)
-                } else if plainStart == nil {
-                    plainStart = start
-                }
-            } else {
-                if plainStart == nil { plainStart = start }
                 i = scalars.index(after: i)
             }
         }
-        if let plain = plainStart {
-            tokens.append(PascalToken(kind: .plain, text: source[plain...]))
+
+        /// Digits, plus a fractional part when a `.` is followed by
+        /// another digit.
+        private mutating func scanNumber() {
+            while i < scalars.endIndex && isDigit(scalars[i]) { i = scalars.index(after: i) }
+            if peek(0, from: i) == ".", let next = peek(1, from: i), isDigit(next) {
+                i = scalars.index(after: i)
+                while i < scalars.endIndex && isDigit(scalars[i]) { i = scalars.index(after: i) }
+            }
         }
-        return tokens
+
+        /// A whole identifier at once, so `AEnd` or `ROWID2` never yields
+        /// a keyword or number from its middle.
+        private mutating func scanIdentifier(from start: String.Index) {
+            while i < scalars.endIndex && isIdentifierPart(scalars[i]) { i = scalars.index(after: i) }
+            if keywords.contains(source[start..<i].lowercased()) {
+                emit(.keyword, from: start)
+            } else if plainStart == nil {
+                plainStart = start
+            }
+        }
     }
 
     private static func isDigit(_ c: Unicode.Scalar) -> Bool {
