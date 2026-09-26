@@ -106,8 +106,10 @@ struct RuleGroupEditor: View {
         }
     }
 
-    /// The header's "+": appends inside this group.
-    private func addToGroup(_ choice: AddRuleMenu.Choice) {
+    /// The header's "+": appends inside this group. `internal`, not
+    /// `private`, so tests can press it -- the same reason
+    /// `actions(for:)` below is.
+    func addToGroup(_ choice: AddRuleMenu.Choice) {
         switch choice {
         case .rule: group.add(group.fieldForNewRule)
         case .group: group.addGroup()
