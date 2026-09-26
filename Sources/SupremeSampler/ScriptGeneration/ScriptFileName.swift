@@ -19,8 +19,10 @@ import Foundation
 ///   it on its first lines.
 enum ScriptFileName {
     /// Roughly how long the part after `Random` may grow before the rest
-    /// of the root's rules become `Etc`. Soft: the first rule is always
-    /// named in full, however long.
+    /// becomes `Etc`: an "all of" root stops at a rule boundary; anything
+    /// else still too long (one long rule, a nested group, an "any of"
+    /// root) is cut where a word begins. Keeps every name far under the
+    /// 255-byte limit macOS puts on a file name.
     static let softLimit = 60
 
     private static let prefix = "Random"
@@ -49,6 +51,7 @@ enum ScriptFileName {
         } else {
             body = phrase(for: .group(root), keywordName) ?? ""
         }
+        body = capped(body)
 
         switch folderBalance {
         case .off: break
@@ -58,8 +61,21 @@ enum ScriptFileName {
 
         guard !body.isEmpty else { return PSCFile.suggestedFileName }
         var stem = prefix + body
-        if stem == referenceStem { stem += "Filtered" }
+        // Any spelling: the scripts folder's volume ignores case, so
+        // "RandomCATALOGSAMPLE.psc" would be the reference script too.
+        if stem.lowercased() == referenceStem.lowercased() { stem += "Filtered" }
         return stem + ".psc"
+    }
+
+    /// `body` if it's within the soft limit (an "all of" root's own `Etc`
+    /// included), else cut to it where a word begins -- before a capital,
+    /// so no word is split -- plus `Etc`. With no capital in reach (one
+    /// very long word), it's cut at the limit.
+    private static func capped(_ body: String) -> String {
+        guard body.count > softLimit + "Etc".count else { return body }
+        let characters = Array(body)
+        let cut = (1...softLimit).last { characters[$0].isUppercase } ?? softLimit
+        return String(characters[..<cut]) + "Etc"
     }
 
     /// Top-level rules every script is expected to carry.

@@ -162,6 +162,60 @@ final class ScriptFileNameTests: XCTestCase {
         XCTAssertLessThanOrEqual(suggested.count, ScriptFileName.softLimit + "Random".count + "Etc.psc".count)
     }
 
+    /// macOS allows at most 255 bytes in a file name; a suggestion past
+    /// that can't be saved at all. Every shape of filter stays within the
+    /// soft limit plus `Etc` and the longest suffix -- not only an "all
+    /// of" root's list of rules (adversarial review, 2026-09-26: 424- and
+    /// 538-byte names from an "any of" root and a long keyword pick).
+    func test_givenFiltersOfEveryShape_whenTheNameWouldBeLong_thenItIsCappedAndEndsWithEtc() {
+        let manyPaths = (1...25).map { FilterRule.keywordPath(KeywordPathFilter(kind: .hasPart, text: "Keyword Number \($0)")) }
+        let longNames = Dictionary(uniqueKeysWithValues: (1...30).map { ("k\($0)", "Landscape Photo \($0)") })
+        let manyPicks = FilterRule.category(
+            CategoryFilter(branches: longNames.keys.sorted().map { CategoryBranch(rootGUID: $0, propGUIDs: [$0]) }, mode: .any))
+        let cases: [(RuleGroup, String)] = [
+            (RuleGroup(match: .any, rules: manyPaths), "an any-of root"),
+            (RuleGroup(match: .none, rules: manyPaths), "a none-of root"),
+            (RuleGroup(match: .all, rules: [manyPicks]), "one long rule"),
+            (RuleGroup(match: .all, rules: [.group(RuleGroup(match: .any, rules: manyPaths))]), "a nested group"),
+        ]
+        let bound = "Random".count + ScriptFileName.softLimit + "Etc".count + "EqualFolders".count + ".psc".count
+        for (root, shape) in cases {
+            let suggested = ScriptFileName.suggest(
+                for: SampleFilter(root: root), folderBalance: .equal, keywordName: { longNames[$0] })
+
+            XCTAssertLessThanOrEqual(suggested.utf8.count, bound, "\(shape): \(suggested)")
+            XCTAssertTrue(suggested.hasSuffix("EtcEqualFolders.psc"), "\(shape): \(suggested)")
+        }
+    }
+
+    /// Cut at the start of a word, so the name doesn't end mid-word.
+    func test_givenALongName_whenCapped_thenItIsCutWhereAWordBegins() {
+        let rules = (1...25).map { FilterRule.keywordPath(KeywordPathFilter(kind: .hasPart, text: "Keyword Number \($0)")) }
+        let suggested = name(rules, match: .any)
+
+        let uncut = (1...25).map { "KeywordNumber\($0)" }.joined(separator: "Or")
+        let kept = String(suggested.dropFirst("Random".count).dropLast("Etc.psc".count))
+
+        XCTAssertTrue(uncut.hasPrefix(kept), suggested)
+        let next = uncut[uncut.index(uncut.startIndex, offsetBy: kept.count)]
+        XCTAssertTrue(next.isUppercase, "cut mid-word before \(next): \(suggested)")
+    }
+
+    /// The scripts folder's volume ignores case, so any spelling of the
+    /// reference script's name is the reference script.
+    func test_givenTextSpellingTheReferenceNameInAnyCase_whenSuggesting_thenItIsNeverTheReferenceScript() {
+        let spellings: [FilterRule] = [
+            .keywordPath(KeywordPathFilter(kind: .contains, text: "CATALOG SAMPLE")),
+            .keywordPath(KeywordPathFilter(kind: .contains, text: "catalogsample")),
+            .fileType(FileTypeFilter(extensions: ["catalogsample"], mode: .any)),
+        ]
+        for rule in spellings {
+            let suggested = name([rule])
+            XCTAssertNotEqual(
+                suggested.lowercased(), "randomcatalogsample.psc", "\(rule) suggested \(suggested)")
+        }
+    }
+
     func test_givenAnyName_whenSuggested_thenItIsSafeAsAFileName() {
         let suggested = name([.path(PathFilter(kind: .contains, text: "a/b:c*d?\"e<f>|g", negated: false))])
         XCTAssertTrue(suggested.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == ".") }, suggested)
