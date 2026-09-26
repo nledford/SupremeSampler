@@ -25,7 +25,11 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.nateledford.SupremeSampler
-        PRODUCT_NAME: SupremeSampler
+        # The app's name as people see it: Xcode derives the bundle's file
+        # name, CFBundleName (the app-menu title) and the executable from
+        # it. The module keeps the space-free name code imports.
+        PRODUCT_NAME: Supreme Sampler
+        PRODUCT_MODULE_NAME: SupremeSampler
         MARKETING_VERSION: "0.2.0"
         CURRENT_PROJECT_VERSION: "2"
         GENERATE_INFOPLIST_FILE: YES
@@ -46,6 +50,8 @@ targets:
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES
+        # XcodeGen builds this from the target name, not PRODUCT_NAME.
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Supreme Sampler.app/Contents/MacOS/Supreme Sampler"
     dependencies:
       - target: SupremeSampler
       - package: GRDB

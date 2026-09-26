@@ -211,7 +211,7 @@ struct ContentView: View {
 
     /// The open catalog's file name, for the window title.
     var catalogTitle: String {
-        guard let path = model.catalogPath else { return "SupremeSampler" }
+        guard let path = model.catalogPath else { return AppName.current }
         return URL(fileURLWithPath: path).lastPathComponent
     }
 

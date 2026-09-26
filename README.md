@@ -1,4 +1,4 @@
-# SupremeSampler
+# Supreme Sampler
 
 A macOS app that builds random-sample scripts for
 [Photo Supreme](https://www.idimager.com) (IDimager). You describe which
@@ -87,7 +87,7 @@ refuses the first launch. Right-click the app in Applications and choose
 **Open**, or run:
 
 ```bash
-xattr -cr /Applications/SupremeSampler.app
+xattr -cr "/Applications/Supreme Sampler.app"
 ```
 
 ## Versioning

@@ -1,3 +1,9 @@
+# The app's name as people see it ("Supreme Sampler"), read from
+# PRODUCT_NAME in project.yml -- its one source. SupremeSampler, with no
+# space, is only the module/scheme/project name. Backticks run a shell
+# command when the Justfile loads, like $(...) in a shell.
+app_name := `awk -F': *' '/^[[:space:]]*PRODUCT_NAME:/{gsub(/"/, "", $2); print $2; exit}' project.yml`
+
 # Run `just` with no arguments to list recipes.
 default:
     @just --list
@@ -12,7 +18,7 @@ build: generate
 
 # Build and launch the app.
 run: build
-    open "$(xcodebuild -project SupremeSampler.xcodeproj -scheme SupremeSampler -configuration Debug -showBuildSettings 2>/dev/null | awk -F' = ' '/ BUILT_PRODUCTS_DIR /{print $2; exit}')/SupremeSampler.app"
+    open "$(xcodebuild -project SupremeSampler.xcodeproj -scheme SupremeSampler -configuration Debug -showBuildSettings 2>/dev/null | awk -F' = ' '/ BUILT_PRODUCTS_DIR /{print $2; exit}')/{{app_name}}.app"
 
 # Run the test suite.
 test: generate
@@ -27,18 +33,35 @@ app: generate
     products="$(printf '%s\n' "$settings" | awk -F' = ' '/ BUILT_PRODUCTS_DIR /{print $2; exit}')"
     xcodebuild -project SupremeSampler.xcodeproj -scheme SupremeSampler \
         -configuration Release -derivedDataPath .build build
-    rm -rf dist/SupremeSampler.app
+    app={{quote(app_name + ".app")}}
+    rm -rf dist/*.app
     mkdir -p dist
-    ditto "$products/SupremeSampler.app" dist/SupremeSampler.app
+    ditto "$products/$app" "dist/$app"
 
-# Verify the packaged app: universal binary, valid ad-hoc signature.
+# Verify the packaged app: its name, universal binary, valid ad-hoc signature.
 verify-app: app
     #!/usr/bin/env bash
     set -euo pipefail
-    app="dist/SupremeSampler.app"
+    name={{quote(app_name)}}
+    app="dist/$name.app"
     test -d "$app" || { echo "missing $app; run: just app" >&2; exit 1; }
 
-    archs="$(lipo -archs "$app/Contents/MacOS/SupremeSampler")"
+    # The app menu shows CFBundleName, so check the name there, not just the
+    # file name; a second copy in CFBundleDisplayName could drift again.
+    info="$app/Contents/Info.plist"
+    bundle_name="$(plutil -extract CFBundleName raw "$info")"
+    test "$bundle_name" = "$name" || {
+        echo "expected CFBundleName \"$name\", got: \"$bundle_name\"" >&2
+        exit 1
+    }
+    if plutil -extract CFBundleDisplayName raw "$info" >/dev/null 2>&1; then
+        echo "CFBundleDisplayName is set; the name belongs in PRODUCT_NAME only" >&2
+        exit 1
+    fi
+    echo "name: $bundle_name"
+
+    executable="$(plutil -extract CFBundleExecutable raw "$info")"
+    archs="$(lipo -archs "$app/Contents/MacOS/$executable")"
     echo "architectures: $archs"
     case "$archs" in
         *arm64*x86_64*|*x86_64*arm64*) ;;
@@ -55,9 +78,9 @@ verify-app: app
         exit 1
     }
 
-    echo "ok: universal, ad-hoc signed"
+    echo "ok: named $name, universal, ad-hoc signed"
 
-# Package dist/SupremeSampler.app into dist/SupremeSampler-<version>.dmg.
+# Package the app in dist/ into dist/SupremeSampler-<version>.dmg.
 dmg: (_dmg "false")
 
 # Package the DMG the way CI does: no Finder cosmetics, works headless.
@@ -86,9 +109,12 @@ _dmg headless: verify-app
         | awk -F' = ' '/ MARKETING_VERSION /{print $2; exit}')"
     test -n "$version" || { echo "could not resolve MARKETING_VERSION" >&2; exit 1; }
 
+    # The DMG's file name keeps the space-free name, so download URLs have
+    # no %20; the app inside it carries the real name.
+    name={{quote(app_name)}}
     rm -rf dist/dmg-stage
     mkdir -p dist/dmg-stage
-    ditto dist/SupremeSampler.app dist/dmg-stage/SupremeSampler.app
+    ditto "dist/$name.app" "dist/dmg-stage/$name.app"
 
     # Remove any previous image first: the guard below tolerates a non-zero
     # create-dmg exit when a valid DMG is present, and a stale file from an
@@ -96,10 +122,10 @@ _dmg headless: verify-app
     rm -f "dist/SupremeSampler-$version.dmg"
 
     create-dmg \
-        --volname SupremeSampler \
+        --volname "$name" \
         --window-size 540 380 \
         --icon-size 128 \
-        --icon SupremeSampler.app 140 190 \
+        --icon "$name.app" 140 190 \
         --app-drop-link 400 190 \
         --overwrite \
         $skip_jenkins \
@@ -120,7 +146,7 @@ _dmg headless: verify-app
         }
 
 # Clear the quarantine flag on a packaged app or DMG (usage: just trust [path]).
-trust path="dist/SupremeSampler.app":
+trust path=("dist/" + app_name + ".app"):
     #!/usr/bin/env bash
     set -euo pipefail
     # `just` substitutes recipe parameters textually; quote() shell-quotes the

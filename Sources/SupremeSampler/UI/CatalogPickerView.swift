@@ -14,7 +14,7 @@ struct CatalogPickerView: View {
             Image(systemName: "photo.stack")
                 .font(.system(size: 48))
                 .foregroundStyle(.secondary)
-            Text("SupremeSampler")
+            Text(AppName.current)
                 .font(.title2)
                 .bold()
             Text("Open a Photo Supreme catalog (.cat.db) to build a sample.")

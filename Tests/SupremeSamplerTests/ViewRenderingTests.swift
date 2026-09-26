@@ -365,7 +365,7 @@ final class ViewRenderingTests: XCTestCase {
     func test_givenACatalogPath_whenTitlingTheWindow_thenTheTitleIsTheFileAndTheSubtitleItsFolder() {
         let model = SampleBuilderModel.forTesting()
         let view = ContentView(model: model)
-        XCTAssertEqual(view.catalogTitle, "SupremeSampler")
+        XCTAssertEqual(view.catalogTitle, "Supreme Sampler")
         XCTAssertEqual(view.catalogFolder, "")
 
         model.injectCatalogForTesting(FakeCatalogForViewTests())  // path "test"
