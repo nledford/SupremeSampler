@@ -181,7 +181,9 @@ deletion excluded, bookmark none of Hidden) are left out at the top of an
 "all of" root. Keywords are named by their own name, not their path;
 text is folded to ASCII; the sample size is left out; past ~60
 characters the rest becomes `Etc` -- at a rule boundary for an "all of"
-root, otherwise where a word begins -- for every shape of filter, since
+root, otherwise before a capital in the limit's second half, else at the
+limit (so an early capital can't discard the text) -- for every shape of
+filter, since
 an uncapped "any of" root once produced a 538-byte name, past macOS's
 255-byte limit (review, 2026-09-26). Nothing left to name gives
 `PSCFile.suggestedFileName` -- never `RandomCatalogSample.psc`, in any

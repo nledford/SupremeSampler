@@ -201,6 +201,19 @@ final class ScriptFileNameTests: XCTestCase {
         XCTAssertTrue(next.isUppercase, "cut mid-word before \(next): \(suggested)")
     }
 
+    /// A capital near the start mustn't win over keeping the text: with
+    /// one very long word, the cut falls at the limit rather than just
+    /// after "NotPath" (review, 2026-09-26: this once came out as
+    /// `RandomNotEtc.psc`, dropping the text).
+    func test_givenOneVeryLongWord_whenCapped_thenItKeepsTheTextUpToTheLimit() {
+        let word = String(repeating: "abcdefghij", count: 7)
+        let suggested = name([.path(PathFilter(kind: .contains, text: word, negated: true))])
+
+        XCTAssertTrue(suggested.hasPrefix("RandomNotPathAbcdefghij"), suggested)
+        XCTAssertEqual(
+            suggested.count, "Random".count + ScriptFileName.softLimit + "Etc".count + ".psc".count, suggested)
+    }
+
     /// The scripts folder's volume ignores case, so any spelling of the
     /// reference script's name is the reference script.
     func test_givenTextSpellingTheReferenceNameInAnyCase_whenSuggesting_thenItIsNeverTheReferenceScript() {

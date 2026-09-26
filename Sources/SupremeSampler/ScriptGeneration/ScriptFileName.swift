@@ -68,13 +68,16 @@ enum ScriptFileName {
     }
 
     /// `body` if it's within the soft limit (an "all of" root's own `Etc`
-    /// included), else cut to it where a word begins -- before a capital,
-    /// so no word is split -- plus `Etc`. With no capital in reach (one
-    /// very long word), it's cut at the limit.
+    /// included), else cut to it before a capital -- usually where a word
+    /// of the name begins, though a capital from the user's own text
+    /// ("McDonald") counts too -- plus `Etc`. Only a capital in the second
+    /// half of the limit counts, so an early one can't throw away most of
+    /// the text (a long path once came out as `NotPathEtc`); without one,
+    /// it's cut at the limit.
     private static func capped(_ body: String) -> String {
         guard body.count > softLimit + "Etc".count else { return body }
         let characters = Array(body)
-        let cut = (1...softLimit).last { characters[$0].isUppercase } ?? softLimit
+        let cut = ((softLimit / 2)...softLimit).last { characters[$0].isUppercase } ?? softLimit
         return String(characters[..<cut]) + "Etc"
     }
 
