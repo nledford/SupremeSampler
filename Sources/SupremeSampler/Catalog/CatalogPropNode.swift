@@ -39,6 +39,19 @@ struct CatalogPropNode: Equatable, Hashable, Identifiable {
         [guid] + children.flatMap(\.subtreeGUIDs)
     }
 
+    /// Every node's GUID mapped to its name, for naming picked keywords
+    /// without walking the tree again at each lookup. Pure, like
+    /// `buildTree` -- the caller passes the roots.
+    static func nameIndex(_ nodes: [CatalogPropNode]) -> [String: String] {
+        var index: [String: String] = [:]
+        func walk(_ node: CatalogPropNode) {
+            index[node.guid] = node.name
+            node.children.forEach(walk)
+        }
+        nodes.forEach(walk)
+        return index
+    }
+
     /// Builds the tree from two flat inputs -- no database access, no
     /// recursive SQL, fully synchronous and pure, which is what makes it
     /// trivially unit-testable with synthetic data. Ported from a

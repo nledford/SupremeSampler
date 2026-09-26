@@ -96,4 +96,23 @@ final class CatalogPropNodeTests: XCTestCase {
         }
         XCTAssertEqual(tree.map(deepest), [CatalogPropNode.maxDepth])
     }
+
+    /// The index names picked keywords for a suggested file name
+    /// (`SampleBuilderModel.suggestedScriptFileName`), so it has to reach
+    /// every node, not just the roots.
+    func test_givenATree_whenIndexingNames_thenEveryNodeAtEveryDepthIsIncluded() {
+        let tree = CatalogPropNode.buildTree(
+            categories: [(guid: "c", name: "Nature")],
+            props: [
+                (guid: "p1", parentGUID: "c", name: "Trees"),
+                (guid: "p2", parentGUID: "p1", name: "Oak"),
+            ]
+        )
+
+        XCTAssertEqual(CatalogPropNode.nameIndex(tree), ["c": "Nature", "p1": "Trees", "p2": "Oak"])
+    }
+
+    func test_givenNoNodes_whenIndexingNames_thenTheIndexIsEmpty() {
+        XCTAssertTrue(CatalogPropNode.nameIndex([]).isEmpty)
+    }
 }

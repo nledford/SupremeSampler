@@ -447,12 +447,7 @@ final class SampleBuilderModel {
     /// with picked keywords named from the open catalog's tree.
     var suggestedScriptFileName: String {
         if let lastSavedScriptURL { return lastSavedScriptURL.lastPathComponent }
-        var namesByGUID: [String: String] = [:]
-        func index(_ node: CatalogPropNode) {
-            namesByGUID[node.guid] = node.name
-            node.children.forEach(index)
-        }
-        propTree.forEach(index)
+        let namesByGUID = CatalogPropNode.nameIndex(propTree)
         return ScriptFileName.suggest(
             for: currentFilter, folderBalance: folderBalance, keywordName: { namesByGUID[$0] })
     }
