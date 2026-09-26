@@ -221,6 +221,10 @@ install:
 release-check tag:
     scripts/release-version.sh check {{quote(tag)}}
 
+# Watch a release tag's CI and Release runs, then check the published release.
+release-watch tag:
+    scripts/release-watch.sh {{quote(tag)}}
+
 # Bump MARKETING_VERSION, commit, tag and push a release (usage: just release 0.2.0).
 release version:
     #!/usr/bin/env bash
@@ -270,6 +274,7 @@ release version:
     git tag "v$version"
     git push origin main
     git push origin "v$version"
+    echo "pushed v$version; confirm it with: just release-watch v$version"
 
 # Remove build artifacts and the generated project.
 clean:

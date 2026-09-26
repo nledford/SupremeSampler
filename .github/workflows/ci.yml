@@ -22,6 +22,8 @@ jobs:
       - uses: ./.github/actions/setup-macos-build
       - name: Run the release-version shell tests
         run: bash scripts/tests/release-version-test.sh
+      - name: Run the release-watch shell tests
+        run: bash scripts/tests/release-watch-test.sh
       - name: Run the test suite
         run: just test
 

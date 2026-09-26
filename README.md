@@ -76,6 +76,8 @@ Releases are cut by pushing a `vX.Y.Z` tag. `just release X.Y.Z` bumps
 workflow then builds the DMG and publishes a GitHub Release with the DMG and a
 `SHA256SUMS` file attached. The workflow refuses a tag that disagrees with
 `MARKETING_VERSION`, so the tag and the built app can't drift apart.
+`just release-watch vX.Y.Z` waits for the tag's CI and Release runs and
+checks the published release has its DMG and `SHA256SUMS`.
 
 The very first release is the exception: `MARKETING_VERSION` is already `0.1.0`,
 and `just release` refuses a version equal to the current one, so tag it by hand

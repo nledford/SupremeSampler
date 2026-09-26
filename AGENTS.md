@@ -647,6 +647,8 @@ Run `just` for the full list. Common ones:
 - `just xcode` — regenerate, then open in Xcode
 - `just dmg` / `just dmg-headless` — package the DMG (see Releases and CI)
 - `just release X.Y.Z` — bump, commit, tag and push a release
+- `just release-watch vX.Y.Z` — wait for that tag's CI and Release runs,
+  then check the GitHub release has its `.dmg` and `SHA256SUMS`
 - `just install` — build the latest stable `vX.Y.Z` tag in a throwaway
   worktree and copy it to `/Applications` under the name that tag built
   (refuses while the app runs; removes a copy under the other name)
@@ -681,6 +683,22 @@ existing local or remote tag, a malformed version, and a non-integer
 `CURRENT_PROJECT_VERSION`. Prereleases are tagged by hand (the recipe accepts
 only `X.Y.Z`); the release workflow accepts a prerelease tag whose *core*
 matches `MARKETING_VERSION` and marks the release `--prerelease`.
+
+**Confirm a release with `just release-watch vX.Y.Z`**
+(`scripts/release-watch.sh`), not an ad-hoc `gh` loop. It finds the runs by
+the tag's commit (CI and Release share a title), waits for both workflows
+to start, watches each run separately, then waits for the release and
+checks its assets; exit codes say which step failed (see the script).
+`gh run watch` also exits non-zero on its own network/API errors, so a
+non-zero watch is checked against the run's recorded conclusion: a gh
+hiccup on a passing run is a note, not a failure (seen once on v0.3.1,
+not reproduced in six reruns).
+It exists because an improvised watcher, run in zsh (the agent's shell
+here), passed two run IDs as one word -- zsh doesn't split unquoted
+variables -- and reported a false failure for v0.3.1 (2026-09-26). The
+script is bash by shebang; `scripts/tests/release-watch-test.sh` (run in
+CI's `test` job) drives it against a fake `gh` through the `GH` seam,
+including that each run ID reaches `gh run watch` as its own argument.
 
 **GRDB is pinned with `exactVersion: 7.11.1`** in `project.yml`, because
 `Package.resolved` lives inside the gitignored `SupremeSampler.xcodeproj/` and
