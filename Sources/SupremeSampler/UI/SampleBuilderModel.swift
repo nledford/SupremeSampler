@@ -448,6 +448,22 @@ final class SampleBuilderModel {
         return lastSave.url
     }
 
+    /// The name the save panel suggests: the file this script was last
+    /// saved to while it still matches it (so re-saving keeps the name the
+    /// user chose), otherwise one built from the rules (`ScriptFileName`),
+    /// with picked keywords named from the open catalog's tree.
+    var suggestedScriptFileName: String {
+        if let lastSavedScriptURL { return lastSavedScriptURL.lastPathComponent }
+        var namesByGUID: [String: String] = [:]
+        func index(_ node: CatalogPropNode) {
+            namesByGUID[node.guid] = node.name
+            node.children.forEach(index)
+        }
+        propTree.forEach(index)
+        return ScriptFileName.suggest(
+            for: currentFilter, folderBalance: folderBalance, keywordName: { namesByGUID[$0] })
+    }
+
     /// Asks `chooser` where to save (starting in `directory`), then
     /// writes the current script there in `.psc` format. Cancelling does
     /// nothing. The write is atomic -- to a temporary file, then renamed
@@ -457,7 +473,7 @@ final class SampleBuilderModel {
         guard canSaveScript else { return }
         guard
             let destination = await chooser.chooseDestination(
-                suggestedFileName: PSCFile.suggestedFileName, startingIn: directory)
+                suggestedFileName: suggestedScriptFileName, startingIn: directory)
         else { return }
 
         let filter = currentFilter

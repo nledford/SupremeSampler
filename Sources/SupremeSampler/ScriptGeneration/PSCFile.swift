@@ -9,11 +9,12 @@ import Foundation
 /// LF, and its git history is the curation audit trail, so a CRLF file
 /// would show every line as changed.
 enum PSCFile {
-    /// Deliberately not `RandomCatalogSample.psc` -- that's the verified
-    /// reference script the generator's tests compare against, and a
-    /// save panel defaulting to its name invites overwriting it. The
-    /// scripts repo's convention is to name each file after its purpose,
-    /// so this is a starting point to rename, not a final name.
+    /// The plain name, for a script with nothing to name it after (no
+    /// rules, or only the background ones -- see `ScriptFileName`, which
+    /// suggests every other name). Deliberately not
+    /// `RandomCatalogSample.psc` -- that's the verified reference script
+    /// the generator's tests compare against, and a save panel defaulting
+    /// to its name invites overwriting it.
     static let suggestedFileName = "RandomSample.psc"
 
     /// Where generated scripts live: a separate git repo whose history

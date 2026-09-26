@@ -68,14 +68,42 @@ final class ScriptSavingTests: XCTestCase {
         XCTAssertTrue(saved.contains("Rating >= 3"))
     }
 
-    func test_givenTheSavePanel_whenSaving_thenItSuggestsTheDefaultNameAndStartingFolder() async {
+    func test_givenTheSavePanel_whenSaving_thenItSuggestsANameFromTheRulesAndTheStartingFolder() async {
         let model = await modelReadyToSave()
         let chooser = FakeDestinationChooser(answer: nil)
 
         await model.saveScript(using: chooser, startingIn: folder)
 
-        XCTAssertEqual(chooser.askedFileName, PSCFile.suggestedFileName)
+        XCTAssertEqual(chooser.askedFileName, "RandomRated3Plus.psc")
         XCTAssertEqual(chooser.askedDirectory, folder)
+    }
+
+    // MARK: - The suggested name
+
+    func test_givenPickedKeywords_whenSuggestingAName_thenTheirNamesComeFromTheCatalogsTree() async {
+        let tree = CatalogPropNode.buildTree(
+            categories: [(guid: "nature", name: "Nature")], props: [(guid: "oak", parentGUID: "nature", name: "Oak")])
+        let model = SampleBuilderModel.forTesting()
+        model.injectCatalogForTesting(CountingCatalog(), propTree: tree)
+        model.rules.add(.keyword)
+        model.rules.rules[0].content = .keyword(KeywordRuleDraft(operator: .isAnyOf, selectedGUIDs: ["oak"]))
+
+        XCTAssertEqual(model.suggestedScriptFileName, "RandomOak.psc")
+    }
+
+    /// Saving the same rules again offers the file already chosen for
+    /// them, so re-saving keeps its name; an edit brings the suggestion
+    /// back.
+    func test_givenAScriptSavedUnderItsOwnName_whenSuggestingAgain_thenThatNameIsOfferedUntilTheRulesChange() async {
+        let model = await modelReadyToSave()
+        await model.saveScript(
+            using: FakeDestinationChooser(answer: folder.appendingPathComponent("FavoriteStills.psc")), startingIn: nil)
+
+        XCTAssertEqual(model.suggestedScriptFileName, "FavoriteStills.psc")
+
+        model.rules.add(.keywordCount)
+
+        XCTAssertEqual(model.suggestedScriptFileName, "RandomRated3PlusWithKeywords.psc")
     }
 
     func test_givenTheUserCancels_whenSaving_thenNothingIsWrittenAndNothingIsReported() async throws {

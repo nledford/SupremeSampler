@@ -172,6 +172,20 @@ Script (⇧⌘C) reach the front window via
 `@FocusedValue`/`.focusedSceneValue` (`ScriptCommands`), unlike
 Open Catalog…'s older global notification.
 
+**The save panel suggests a name built from the rules.**
+`ScriptFileName` (pure, `ScriptGeneration/`) turns the filter into
+`Random` + one PascalCase phrase per rule + a folder-balance suffix
+(`RandomRated3PlusNoKeywordsBalanced.psc`); `ScriptFileNameTests` is the
+agreed example table. The two rules expected on every script (pending
+deletion excluded, bookmark none of Hidden) are left out at the top of an
+"all of" root. Keywords are named by their own name, not their path;
+text is folded to ASCII; the sample size is left out; past ~60
+characters the root's remaining rules become `Etc`. Nothing left to name
+gives `PSCFile.suggestedFileName` -- never `RandomCatalogSample.psc`, the
+reference script a default save must not overwrite. While the rules
+still match the last save, `suggestedScriptFileName` offers that file's
+name instead, so re-saving keeps the user's own name.
+
 **The rule builder edits a draft, not the domain filter.**
 `RuleGroupDraft` (`UI/RuleGroupDraft.swift`) is what the controls bind
 to — a picker kind plus a stepper value per rating rule, the keyword
