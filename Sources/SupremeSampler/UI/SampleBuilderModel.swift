@@ -40,7 +40,7 @@ final class SampleBuilderModel {
     /// The open catalog's file types, for the file-type rule's picker.
     /// Loaded in the background after opening (see `loadFileTypes`).
     private(set) var catalogFileTypes: CatalogValues = .loading
-    private var fileTypesTask: Task<Void, Never>?
+    private let fileTypesQuery = LatestQuery<[ValueCount]>()
     private(set) var matchingCount: Int?
     private(set) var errorMessage: String?
     private(set) var isOpeningCatalog = false
@@ -80,15 +80,13 @@ final class SampleBuilderModel {
     // cancel a still-running older one -- otherwise a slow query for a
     // filter you've already changed away from could finish *after* a
     // faster, more current one and overwrite its result with stale
-    // data. The same problem an `AbortController` solves for a
-    // superseded `fetch()` in JS, or that dropping a previous
-    // `JoinHandle` solves in Rust.
-    private var matchCountTask: Task<Void, Never>?
+    // data. `LatestQuery` is where that rule lives; see its doc comment.
+    private let matchCountQuery = LatestQuery<Int>()
 
     // Not used for cancellation (see the doc comment on `openCatalog`
     // for why that isn't needed today) -- tracked only so a test can
     // deterministically await this Task's completion instead of
-    // guessing a sleep duration, the same reason `matchCountTask` is
+    // guessing a sleep duration, the same reason `matchCountQuery` is
     // awaitable via `waitForPendingMatchCountForTesting`.
     private var openCatalogTask: Task<Void, Never>?
 
@@ -170,7 +168,7 @@ final class SampleBuilderModel {
     // background while folder balance is on. Kept with the filter they
     // were counted for, so a changed filter never shows stale numbers.
     private var folderCounts: (filter: SampleFilter, folders: [FolderPhotoCount])?
-    private var folderAuditTask: Task<Void, Never>?
+    private let folderAuditQuery = LatestQuery<[FolderPhotoCount]>()
     private var folderAuditFilter: SampleFilter?
     private(set) var isAuditingFolders = false
     private(set) var folderAuditErrorMessage: String?
@@ -330,18 +328,13 @@ final class SampleBuilderModel {
     /// every photo (~4s on the real catalog). Cancels a previous load, so
     /// switching catalogs can't have the old catalog's list arrive late
     /// and overwrite the new one -- the same guard `refreshMatchingCount`
-    /// uses.
+    /// uses, both now via `LatestQuery`.
     private func loadFileTypes(from catalog: PhotoSupremeCatalog) {
-        fileTypesTask?.cancel()
         catalogFileTypes = .loading
-        fileTypesTask = Task {
-            do {
-                let types = try await catalog.listFileTypes()
-                guard !Task.isCancelled else { return }
-                catalogFileTypes = .loaded(types)
-            } catch {
-                guard !Task.isCancelled else { return }
-                catalogFileTypes = .failed(error.localizedDescription)
+        fileTypesQuery.run { try await catalog.listFileTypes() } apply: { result in
+            switch result {
+            case .success(let types): self.catalogFileTypes = .loaded(types)
+            case .failure(let error): self.catalogFileTypes = .failed(error.localizedDescription)
             }
         }
     }
@@ -504,9 +497,8 @@ final class SampleBuilderModel {
     /// pre-flight validation idea discussed before any script generator
     /// existed.
     func refreshMatchingCount() {
-        matchCountTask?.cancel()
-
         guard let catalog else {
+            matchCountQuery.cancel()
             isCountingMatches = false
             matchingCount = nil
             return
@@ -515,33 +507,23 @@ final class SampleBuilderModel {
         let filter = currentFilter
         isCountingMatches = true
 
-        matchCountTask = Task {
-            do {
-                let count = try await catalog.matchingItemCount(for: filter)
-                // Only a task that actually finishes uninterrupted gets
-                // to update state -- deliberately NOT a `defer`, and
-                // deliberately checked again here rather than trusting
-                // the `matchCountTask?.cancel()` above alone: a
-                // superseded task might already be past this `await`
-                // and about to write its (stale) result by the time the
-                // next `refreshMatchingCount()` call cancels it, so
-                // `isCancelled` is what actually gates whether it's
-                // still allowed to touch `matchingCount`/
-                // `isCountingMatches`. A `defer`-based reset here would
-                // have a bug: a cancelled task's cleanup could clear
-                // `isCountingMatches` right after a *newer* task has
-                // already set it back to true, ending the spinner while
-                // the newer query is still genuinely running.
-                guard !Task.isCancelled else { return }
-                matchingCount = count
-                errorMessage = nil
-                isCountingMatches = false
-            } catch {
-                guard !Task.isCancelled else { return }
-                matchingCount = nil
-                errorMessage = "Couldn't count matching photos: \(error.localizedDescription)"
-                isCountingMatches = false
+        // Only a query that actually finishes uninterrupted gets to
+        // update state -- `LatestQuery` cancels the previous one and
+        // drops a superseded result, even one already past its `await`.
+        // Deliberately not a `defer` here: a cancelled query's cleanup
+        // would clear `isCountingMatches` right after a *newer* query
+        // has already set it back to true, ending the spinner while the
+        // newer query is still genuinely running.
+        matchCountQuery.run { try await catalog.matchingItemCount(for: filter) } apply: { result in
+            switch result {
+            case .success(let count):
+                self.matchingCount = count
+                self.errorMessage = nil
+            case .failure(let error):
+                self.matchingCount = nil
+                self.errorMessage = "Couldn't count matching photos: \(error.localizedDescription)"
             }
+            self.isCountingMatches = false
         }
     }
 
@@ -555,7 +537,7 @@ final class SampleBuilderModel {
     /// task writes" guard as `refreshMatchingCount`.
     func refreshFolderAudit() {
         guard folderBalance != .off, let catalog else {
-            folderAuditTask?.cancel()
+            folderAuditQuery.cancel()
             folderAuditFilter = nil
             isAuditingFolders = false
             return
@@ -564,22 +546,19 @@ final class SampleBuilderModel {
         if folderCounts?.filter == filter { return }
         if isAuditingFolders && folderAuditFilter == filter { return }
 
-        folderAuditTask?.cancel()
         folderAuditFilter = filter
         isAuditingFolders = true
         folderAuditErrorMessage = nil
-        folderAuditTask = Task {
-            do {
-                let folders = try await catalog.folderPhotoCounts(for: filter)
-                guard !Task.isCancelled else { return }
-                folderCounts = (filter, folders)
-            } catch {
-                guard !Task.isCancelled else { return }
-                folderCounts = nil
-                folderAuditErrorMessage = "Couldn't check folders: \(error.localizedDescription)"
+        folderAuditQuery.run { try await catalog.folderPhotoCounts(for: filter) } apply: { result in
+            switch result {
+            case .success(let folders):
+                self.folderCounts = (filter, folders)
+            case .failure(let error):
+                self.folderCounts = nil
+                self.folderAuditErrorMessage = "Couldn't check folders: \(error.localizedDescription)"
             }
-            folderAuditFilter = nil
-            isAuditingFolders = false
+            self.folderAuditFilter = nil
+            self.isAuditingFolders = false
         }
     }
 
@@ -602,18 +581,18 @@ final class SampleBuilderModel {
     /// currently in flight, so a test can wait for it to actually finish
     /// instead of guessing how long to sleep.
     func waitForPendingMatchCountForTesting() async {
-        await matchCountTask?.value
+        await matchCountQuery.wait()
     }
 
     /// Test seam: awaits the folder audit, if one is running.
     func waitForPendingFolderAuditForTesting() async {
-        await folderAuditTask?.value
+        await folderAuditQuery.wait()
     }
 
     /// Test seam: awaits the background file-type listing, if one is
     /// running.
     func waitForPendingFileTypesForTesting() async {
-        await fileTypesTask?.value
+        await fileTypesQuery.wait()
     }
 
     /// Test seam: awaits whatever `openCatalog(at:)` call is currently
