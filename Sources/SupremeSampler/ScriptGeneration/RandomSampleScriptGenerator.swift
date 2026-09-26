@@ -248,6 +248,7 @@ enum RandomSampleScriptGenerator {
         case .category(let category): return [indent + "Category filter: \(describe(category))"]
         case .path(let path): return [indent + "Path filter: \(describe(path))"]
         case .keywordPath(let keywordPath): return [indent + "Keyword path filter: \(describe(keywordPath))"]
+        case .keywordCount(let keywordCount): return [indent + "Keyword count filter: \(describe(keywordCount))"]
         case .label(let label):
             let count = label.labels.count
             let mode = label.mode == .any ? "any of" : "none of"
@@ -287,6 +288,16 @@ enum RandomSampleScriptGenerator {
         case (.contains, true): phrase = "does not contain"
         }
         return phrase + " \"" + commentSafe(path.text) + "\""
+    }
+
+    private static func describe(_ keywordCount: KeywordCountFilter) -> String {
+        switch keywordCount {
+        case .exactly(0): return "is 0 (no keywords)"
+        case .exactly(let n): return "is \(n)"
+        case .atLeast(let n): return "is at least \(n)"
+        case .atMost(let n): return "is at most \(n)"
+        case .isNot(let n): return "is not \(n)"
+        }
     }
 
     private static func describe(_ keywordPath: KeywordPathFilter) -> String {

@@ -410,12 +410,27 @@ for instance, so it isn't offered.
   Supreme's own bundled SQLite 3.35.5 (loaded via ctypes, read-only);
   **not yet run in Script Studio.** The row shows "N keywords" as you
   type, from the in-memory tree (`matchingKeywordPaths`), no query.
+- **Keyword count** (`KeywordCountFilter`; its own "Keyword count"
+  field, plus the Keyword field's "is empty" / "is not empty", which are
+  a count of 0 / at least 1): how many distinct keywords -- custom-tree
+  nodes, the same set the keyword path rule sees (`keywordPathsQuery`) --
+  are assigned to the photo; ancestors aren't added. Rendered uncorrelated:
+  photos with keywords are grouped and counted (`GROUP BY
+  d.CatalogItemGUID HAVING COUNT(DISTINCT d.GUID) ...`), then `IN` when
+  zero keywords fails the rule, or `NOT IN ... HAVING NOT (...)` when it
+  passes, since a photo with no keywords has no rows to count. Real
+  catalog, 2026-09-26: 1.4-3s; the correlated per-photo count took ~100s.
+  The earlier lusia tool called a photo "labeled" if it had any
+  `idCatalogItemDefinition` row (later: any whose `idProp.PropValue <>
+  'A'`); every assignment there was a custom keyword and every
+  `PropValue` was `''`, so "is empty" is the same set of photos. The SQL
+  is integers only, so both renderers share `photoGUIDTest`.
 - **Negations**: `RatingFilter.isNot` renders `Rating IS NOT n`,
   SQLite's NULL-safe inequality, so an unknown rating counts as "not n"
   — consistent with "none of" groups. `PathFilter.negated` renders
   `NOT EXISTS`. The label, file type, category and bookmark rules
   already have "none of". The UI offers each as one flat operator
-  choice (`RatingComparisonKind.isNot`, `PathOperator`,
+  choice (`NumberComparisonKind.isNot`, `PathOperator`,
   `KeywordOperator`).
 
 ## Switching catalogs (File > Open Catalog…)
@@ -468,7 +483,7 @@ deliberate, reasoned exceptions:
   for real, and isn't reliably constructible in a deterministic test
   without adding test-only seams to the sampling algorithm itself.
   Left uncovered rather than gamed.
-- A couple of single-line SwiftUI closures (`RatingComparisonKind.id`,
+- A couple of single-line SwiftUI closures (`NumberComparisonKind.id`,
   one or two `ForEach`/`List` row closures) only run inside SwiftUI's
   own rendering machinery, which a plain `XCTest` run never invokes —
   see the note on `ViewRenderingTests` below for what *is* covered

@@ -279,6 +279,11 @@ struct RuleRow: View {
             KeywordRuleControls(
                 rule: payload(fallback: keyword, { if case .keyword(let k) = $0 { return k }; return nil }, RuleDraft.Content.keyword),
                 propTree: propTree)
+        case .keywordCount(let keywordCount):
+            KeywordCountRuleControls(
+                rule: payload(
+                    fallback: keywordCount, { if case .keywordCount(let k) = $0 { return k }; return nil },
+                    RuleDraft.Content.keywordCount))
         case .path(let path):
             PathRuleControls(
                 rule: payload(fallback: path, { if case .path(let p) = $0 { return p }; return nil }, RuleDraft.Content.path))
@@ -335,13 +340,31 @@ struct RatingRuleControls: View {
 
     var body: some View {
         Picker("Comparison", selection: $rule.comparison) {
-            ForEach(RatingComparisonKind.allCases) { kind in
+            ForEach(NumberComparisonKind.allCases) { kind in
                 Text(kind.rawValue).tag(kind)
             }
         }
         .labelsHidden()
         .fixedSize()
         Stepper("\(rule.value) star\(rule.value == 1 ? "" : "s")", value: $rule.value, in: 0...5)
+            .fixedSize()
+    }
+}
+
+/// "[is / is at least / …] [n keywords]" -- how many keywords the photo
+/// has (`KeywordCountFilter`).
+struct KeywordCountRuleControls: View {
+    @Binding var rule: KeywordCountRuleDraft
+
+    var body: some View {
+        Picker("Comparison", selection: $rule.comparison) {
+            ForEach(NumberComparisonKind.allCases) { kind in
+                Text(kind.rawValue).tag(kind)
+            }
+        }
+        .labelsHidden()
+        .fixedSize()
+        Stepper("\(rule.value) keyword\(rule.value == 1 ? "" : "s")", value: $rule.value, in: 0...99)
             .fixedSize()
     }
 }
@@ -373,7 +396,9 @@ struct KeywordRuleControls: View {
         .labelsHidden()
         .fixedSize()
 
-        if rule.operator.picksKeywords {
+        if !rule.operator.takesValue {
+            // "is empty" / "is not empty": the operator says it all.
+        } else if rule.operator.picksKeywords {
             ValuePickerButton(
                 summary: ValueSummary.text(for: ValueSummary.keywordNames(for: rule.selectedGUIDs, in: propTree)),
                 accessibilityLabel: "Keywords"

@@ -18,7 +18,7 @@ import Foundation
 
 /// A rating rule as the controls see it: "Rating [comparison] [value]".
 struct RatingRuleDraft: Equatable, Codable {
-    var comparison: RatingComparisonKind = .atLeast
+    var comparison: NumberComparisonKind = .atLeast
     var value: Int = 3
 
     var domainFilter: RatingFilter {
@@ -31,11 +31,13 @@ struct RatingRuleDraft: Equatable, Codable {
     }
 }
 
-/// The keyword rule's operator picker. Two families share one picker,
+/// The keyword rule's operator picker. Three families share one picker,
 /// as Lightroom's "Keywords" field does: the first three test keywords
-/// picked from the tree (each with its whole branch); the rest test the
-/// text of keyword paths (`KeywordPathFilter`). Flat, one plain value per
-/// choice, for the same reason as `PathOperator`.
+/// picked from the tree (each with its whole branch); the text tests
+/// match keyword paths (`KeywordPathFilter`); "is empty"/"is not empty"
+/// test whether the photo has any keyword at all (a `KeywordCountFilter`
+/// of zero). Flat, one plain value per choice, for the same reason as
+/// `PathOperator`.
 enum KeywordOperator: String, CaseIterable, Identifiable, Hashable, Codable {
     case isAnyOf = "is any of"
     case isAllOf = "is all of"
@@ -48,6 +50,8 @@ enum KeywordOperator: String, CaseIterable, Identifiable, Hashable, Codable {
     case doesNotStartWith = "does not start with"
     case endsWith = "ends with"
     case doesNotEndWith = "does not end with"
+    case isEmpty = "is empty"
+    case isNotEmpty = "is not empty"
 
     // Saved by case name, not by `rawValue` (the menu label): renaming a
     // label must not make saved sessions unreadable (see `CaseNameCoding`).
@@ -57,21 +61,32 @@ enum KeywordOperator: String, CaseIterable, Identifiable, Hashable, Codable {
     var id: String { rawValue }
 
     /// The picker's menu, split by dividers: the tree picks, then each
-    /// text test beside its negation, so no run is longer than three.
+    /// text test beside its negation, then the presence tests, so no run
+    /// is longer than three.
     static let menuSections: [[KeywordOperator]] = [
         [.isAnyOf, .isAllOf, .isNoneOf],
         [.contains, .doesNotContain],
         [.hasPart, .hasNoPart],
         [.startsWith, .doesNotStartWith],
         [.endsWith, .doesNotEndWith],
+        [.isEmpty, .isNotEmpty],
     ]
 
     /// `true` for the operators that test keywords picked from the tree,
-    /// `false` for the ones that test path text.
+    /// `false` for the ones that test path text or presence.
     var picksKeywords: Bool {
         switch self {
         case .isAnyOf, .isAllOf, .isNoneOf: return true
         default: return false
+        }
+    }
+
+    /// `false` for "is empty"/"is not empty", which need no picks or
+    /// text: the row shows no value control for them.
+    var takesValue: Bool {
+        switch self {
+        case .isEmpty, .isNotEmpty: return false
+        default: return true
         }
     }
 }
@@ -92,7 +107,7 @@ struct KeywordRuleDraft: Equatable, Codable {
             KeywordPathFilter(kind: kind, text: text, negated: negated)
         }
         switch `operator` {
-        case .isAnyOf, .isAllOf, .isNoneOf: return nil
+        case .isAnyOf, .isAllOf, .isNoneOf, .isEmpty, .isNotEmpty: return nil
         case .contains: return path(.contains)
         case .doesNotContain: return path(.contains, negated: true)
         case .hasPart: return path(.hasPart)
@@ -106,6 +121,8 @@ struct KeywordRuleDraft: Equatable, Codable {
 
     func domainRule(resolvingCategoriesIn tree: [CatalogPropNode]) -> FilterRule {
         if let keywordPathFilter { return .keywordPath(keywordPathFilter) }
+        if `operator` == .isEmpty { return .keywordCount(.isEmpty) }
+        if `operator` == .isNotEmpty { return .keywordCount(.isNotEmpty) }
         let branches = CategoryBranch.resolve(selectedGUIDs: selectedGUIDs, in: tree)
         switch `operator` {
         case .isAllOf: return .category(CategoryFilter(branches: branches, mode: .all))
@@ -115,9 +132,27 @@ struct KeywordRuleDraft: Equatable, Codable {
     }
 }
 
+/// A keyword count rule as the controls see it: "Keyword count
+/// [comparison] [n keywords]". Defaults to "is at least 1" -- photos with
+/// any keyword -- so a rule that's just been added doesn't empty the
+/// sample the way "is 0" or a high count might.
+struct KeywordCountRuleDraft: Equatable, Codable {
+    var comparison: NumberComparisonKind = .atLeast
+    var value: Int = 1
+
+    var domainFilter: KeywordCountFilter {
+        switch comparison {
+        case .exactly: return .exactly(value)
+        case .atLeast: return .atLeast(value)
+        case .atMost: return .atMost(value)
+        case .isNot: return .isNot(value)
+        }
+    }
+}
+
 /// The path rule's operator picker: each match kind, plain or negated,
 /// as one flat choice -- a `Picker` binds to one plain value, the same
-/// reason `RatingComparisonKind` exists.
+/// reason `NumberComparisonKind` exists.
 enum PathOperator: String, CaseIterable, Identifiable, Hashable, Codable {
     case contains = "contains"
     case doesNotContain = "does not contain"
@@ -194,6 +229,7 @@ struct RuleDraft: Identifiable, Equatable, Codable {
     enum Content: Equatable, Codable {
         case rating(RatingRuleDraft)
         case keyword(KeywordRuleDraft)
+        case keywordCount(KeywordCountRuleDraft)
         case path(PathRuleDraft)
         case label(LabelRuleDraft)
         case fileType(FileTypeRuleDraft)
@@ -218,6 +254,7 @@ struct RuleDraft: Identifiable, Equatable, Codable {
 enum RuleField: String, CaseIterable, Identifiable, Hashable {
     case rating = "Rating"
     case keyword = "Keyword"
+    case keywordCount = "Keyword count"
     case path = "File path"
     case label = "Color label"
     case fileType = "File type"
@@ -229,7 +266,7 @@ enum RuleField: String, CaseIterable, Identifiable, Hashable {
     /// The field picker's menu, split by dividers: rating and keywords,
     /// the marks other tools set, then the file itself.
     static let menuSections: [[RuleField]] = [
-        [.rating, .keyword],
+        [.rating, .keyword, .keywordCount],
         [.label, .bookmark, .pendingDeletion],
         [.path, .fileType],
     ]
@@ -239,6 +276,7 @@ enum RuleField: String, CaseIterable, Identifiable, Hashable {
         switch self {
         case .rating: return .rating(RatingRuleDraft())
         case .keyword: return .keyword(KeywordRuleDraft())
+        case .keywordCount: return .keywordCount(KeywordCountRuleDraft())
         case .path: return .path(PathRuleDraft())
         case .label: return .label(LabelRuleDraft())
         case .fileType: return .fileType(FileTypeRuleDraft())
@@ -254,6 +292,7 @@ extension RuleDraft {
         switch content {
         case .rating: return .rating
         case .keyword: return .keyword
+        case .keywordCount: return .keywordCount
         case .path: return .path
         case .label: return .label
         case .fileType: return .fileType
@@ -340,6 +379,8 @@ struct RuleGroupDraft: Identifiable, Equatable, Codable {
                     return .rating(rating.domainFilter)
                 case .keyword(let keyword):
                     return keyword.domainRule(resolvingCategoriesIn: tree)
+                case .keywordCount(let keywordCount):
+                    return .keywordCount(keywordCount.domainFilter)
                 case .path(let path):
                     return .path(PathFilter(kind: path.operator.kind, text: path.text, negated: path.operator.isNegated))
                 case .label(let label):

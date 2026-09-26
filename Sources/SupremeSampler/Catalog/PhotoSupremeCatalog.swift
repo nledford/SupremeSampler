@@ -360,6 +360,8 @@ struct PhotoSupremeCatalog: Sendable {
         case .category(let category): return categoryPredicate(category)
         case .path(let path): return pathPredicate(path)
         case .keywordPath(let keywordPath): return keywordPathPredicate(keywordPath)
+        // Integers only, so the text is shared with the script renderer.
+        case .keywordCount(let keywordCount): return SQL(sql: keywordCount.photoGUIDTest)
         case .label(let label): return labelPredicate(label)
         case .fileType(let fileType): return fileTypePredicate(fileType)
         case .bookmark(let bookmark): return bookmarkPredicate(bookmark)

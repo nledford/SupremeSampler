@@ -221,6 +221,11 @@ final class PredicateConsistencyTests: XCTestCase {
             SampleFilter(category: CategoryFilter(branches: [branchA, branchB], mode: .all)),
             SampleFilter(category: CategoryFilter(branches: [branchA], mode: .none)),
             SampleFilter(rating: .atLeast(2), category: CategoryFilter(branches: [branchA, branchB], mode: .all)),
+            SampleFilter(root: RuleGroup(match: .all, rules: [.keywordCount(.isEmpty)])),
+            SampleFilter(root: RuleGroup(match: .all, rules: [.keywordCount(.isNotEmpty)])),
+            SampleFilter(root: RuleGroup(match: .all, rules: [.keywordCount(.atLeast(2))])),
+            SampleFilter(root: RuleGroup(match: .all, rules: [.keywordCount(.atMost(1))])),
+            SampleFilter(root: RuleGroup(match: .none, rules: [.keywordCount(.exactly(2))])),
         ]
 
         for filter in filters {
@@ -252,7 +257,7 @@ final class PredicateConsistencyTests: XCTestCase {
     }
 
     private func randomRule(depth: Int, using rng: inout SeededGenerator) -> FilterRule {
-        switch Int.random(in: 0..<(depth > 0 ? 9 : 8), using: &rng) {
+        switch Int.random(in: 0..<(depth > 0 ? 10 : 9), using: &rng) {
         case 0:
             let value = Int.random(in: 0...5, using: &rng)
             return .rating(
@@ -293,6 +298,11 @@ final class PredicateConsistencyTests: XCTestCase {
             let kind = KeywordPathMatchKind.allCases.randomElement(using: &rng)!
             return .keywordPath(
                 KeywordPathFilter(kind: kind, text: texts.randomElement(using: &rng)!, negated: Bool.random(using: &rng)))
+        case 8:
+            let value = Int.random(in: 0...4, using: &rng)
+            return .keywordCount(
+                [KeywordCountFilter.exactly(value), .atLeast(value), .atMost(value), .isNot(value)]
+                    .randomElement(using: &rng)!)
         default:
             return .group(randomGroup(depth: depth - 1, using: &rng))
         }
@@ -361,6 +371,11 @@ final class PredicateConsistencyTests: XCTestCase {
         case .keywordPath(let keywordPath):
             let paths = item.propGUIDs.flatMap { Self.fixtureKeywordPaths[$0] ?? [] }
             return keywordPath.matchesPhoto(keywordPaths: paths)
+        case .keywordCount(let keywordCount):
+            // Keywords are the props with a path: custom trees only,
+            // within the depth cap. Duplicates count once.
+            let keywords = Set(item.propGUIDs.filter { Self.fixtureKeywordPaths[$0] != nil })
+            return keywordCount.matches(count: keywords.count)
         case .group(let group):
             return oracleMatches(group, item)
         }
@@ -418,6 +433,9 @@ final class PredicateConsistencyTests: XCTestCase {
             FixtureItem(guid: "deep-33", rating: 1, propGUIDs: ["L33"]),
             FixtureItem(guid: "obrien", rating: 0, propGUIDs: ["obrien"]),
             FixtureItem(guid: "ete", rating: 5, propGUIDs: ["ete", "catA"]),
+            FixtureItem(guid: "four", rating: 2, propGUIDs: ["catA", "catB", "catC", "obrien"]),
+            // A keyword plus a built-in prop: counts as one keyword.
+            FixtureItem(guid: "mixed", rating: 3, propGUIDs: ["catA", "builtin-trees"]),
         ]
         try makeFixture(items)
         let catalog = try PhotoSupremeCatalog(path: fixturePath)

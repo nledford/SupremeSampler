@@ -18,6 +18,8 @@ final class RuleRowWidthTests: XCTestCase {
         .rating(RatingRuleDraft(comparison: .atLeast, value: 5)),
         .keyword(KeywordRuleDraft(operator: .isNoneOf, selectedGUIDs: ["b"])),
         .keyword(KeywordRuleDraft(operator: .doesNotStartWith, text: "Nature\\Trees\\Oak")),
+        .keyword(KeywordRuleDraft(operator: .isNotEmpty)),
+        .keywordCount(KeywordCountRuleDraft(comparison: .atLeast, value: 99)),
         .path(PathRuleDraft(operator: .doesNotStartWith, text: "/Volumes/Photos/library/")),
         .label(LabelRuleDraft(mode: .none)),
         .fileType(FileTypeRuleDraft(mode: .none)),

@@ -47,6 +47,8 @@ enum SQLPredicateText {
         case .category(let category): return categoryClause(category)
         case .path(let path): return pathClause(path)
         case .keywordPath(let keywordPath): return keywordPathClause(keywordPath)
+        // Integers only, so the text is shared with the live renderer.
+        case .keywordCount(let keywordCount): return keywordCount.photoGUIDTest
         case .label(let label): return labelClause(label)
         case .fileType(let fileType): return fileTypeClause(fileType)
         case .bookmark(let bookmark): return bookmarkClause(bookmark)

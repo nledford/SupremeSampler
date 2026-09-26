@@ -24,6 +24,8 @@ enum FilterRule: Equatable {
     case path(PathFilter)
     /// Some (or, negated, no) keyword's path matches text.
     case keywordPath(KeywordPathFilter)
+    /// How many keywords the photo has; "Keyword is empty" is zero.
+    case keywordCount(KeywordCountFilter)
     case label(LabelFilter)
     case fileType(FileTypeFilter)
     case bookmark(BookmarkFilter)

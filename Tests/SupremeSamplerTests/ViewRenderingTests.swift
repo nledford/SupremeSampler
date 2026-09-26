@@ -173,6 +173,8 @@ final class ViewRenderingTests: XCTestCase {
             .keyword(KeywordRuleDraft()),
             .keyword(KeywordRuleDraft(operator: .isAllOf, selectedGUIDs: ["prop-pines"])),
             .keyword(KeywordRuleDraft(operator: .hasNoPart, text: "Pines")),
+            .keyword(KeywordRuleDraft(operator: .isEmpty)),
+            .keywordCount(KeywordCountRuleDraft()),
             .path(PathRuleDraft()),
             .label(LabelRuleDraft()),
             .fileType(FileTypeRuleDraft()),
@@ -278,6 +280,12 @@ final class ViewRenderingTests: XCTestCase {
     func test_givenAPendingDeletionRule_whenBuildingItsControls_thenBothChoicesRender() {
         for isPending in [true, false] {
             _ = PendingDeletionRuleControls(rule: .constant(PendingDeletionRuleDraft(isPending: isPending))).body
+        }
+    }
+
+    func test_givenAKeywordCountRule_whenBuildingItsControls_thenBodyDoesNotCrash() {
+        for value in [0, 1, 99] {
+            _ = KeywordCountRuleControls(rule: .constant(KeywordCountRuleDraft(comparison: .isNot, value: value))).body
         }
     }
 

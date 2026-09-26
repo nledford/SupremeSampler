@@ -407,6 +407,72 @@ final class RuleGroupDraftTests: XCTestCase {
         XCTAssertEqual(draft.fieldForNewRule, .path)
     }
 
+    // MARK: - Keyword presence and count
+
+    func test_givenAKeywordRule_whenChoosingIsEmptyOrIsNotEmpty_thenItTestsWhetherThePhotoHasKeywords() {
+        let expected: [(KeywordOperator, KeywordCountFilter)] = [(.isEmpty, .isEmpty), (.isNotEmpty, .isNotEmpty)]
+        for (keywordOperator, count) in expected {
+            var draft = RuleGroupDraft()
+            draft.add(.keyword)
+            draft.rules[0].content = .keyword(
+                KeywordRuleDraft(operator: keywordOperator, selectedGUIDs: ["prop-pines"], text: "Trees"))
+
+            XCTAssertEqual(filter(draft).root.rules, [.keywordCount(count)], "\(keywordOperator)")
+        }
+    }
+
+    /// "is empty" and "is not empty" have nothing to pick or type, so the
+    /// row shows no value control; every other operator has one.
+    func test_givenEachKeywordOperator_whenAskingWhetherItTakesAValue_thenOnlyThePresenceTestsDoNot() {
+        for keywordOperator in KeywordOperator.allCases {
+            let isPresenceTest = keywordOperator == .isEmpty || keywordOperator == .isNotEmpty
+            XCTAssertEqual(keywordOperator.takesValue, !isPresenceTest, "\(keywordOperator)")
+            if isPresenceTest {
+                XCTAssertFalse(keywordOperator.picksKeywords, "\(keywordOperator)")
+                XCTAssertNil(KeywordRuleDraft(operator: keywordOperator, text: "x").keywordPathFilter)
+            }
+        }
+    }
+
+    func test_givenKeywordsPicked_whenSwitchingToIsEmptyAndBack_thenThePicksAreKept() {
+        var keyword = KeywordRuleDraft(operator: .isAnyOf, selectedGUIDs: ["prop-pines"])
+        keyword.operator = .isEmpty
+        keyword.operator = .isAnyOf
+        XCTAssertEqual(keyword.selectedGUIDs, ["prop-pines"])
+    }
+
+    func test_givenAnEmptyGroup_whenAddingAKeywordCountRule_thenItDefaultsToAtLeastOneKeyword() {
+        var draft = RuleGroupDraft()
+
+        draft.add(.keywordCount)
+
+        XCTAssertEqual(filter(draft).root.rules, [.keywordCount(.atLeast(1))])
+    }
+
+    func test_givenAKeywordCountRule_whenChoosingEachComparison_thenTheFilterFollows() {
+        let expected: [(NumberComparisonKind, KeywordCountFilter)] = [
+            (.exactly, .exactly(2)), (.atLeast, .atLeast(2)), (.atMost, .atMost(2)), (.isNot, .isNot(2)),
+        ]
+        for (comparison, count) in expected {
+            var draft = RuleGroupDraft()
+            draft.add(.keywordCount)
+            draft.rules[0].content = .keywordCount(KeywordCountRuleDraft(comparison: comparison, value: 2))
+
+            XCTAssertEqual(filter(draft).root.rules, [.keywordCount(count)], "\(comparison)")
+        }
+    }
+
+    func test_givenAKeywordRow_whenItsFieldIsChangedToKeywordCount_thenItKeepsItsPlaceAndIdentity() {
+        var draft = RuleGroupDraft()
+        draft.add(.keyword)
+        let id = draft.rules[0].id
+
+        draft.changeField(ofRule: id, to: .keywordCount)
+
+        XCTAssertEqual(draft.rules[0].id, id)
+        XCTAssertEqual(draft.rules[0].field, .keywordCount)
+    }
+
     func test_givenAKeywordRule_whenAskingForItsPathFilter_thenOnlyPathOperatorsHaveOne() {
         XCTAssertNil(KeywordRuleDraft(operator: .isAllOf, text: "Pines").keywordPathFilter)
         XCTAssertEqual(
