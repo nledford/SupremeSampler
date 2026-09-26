@@ -80,6 +80,19 @@ widest the rule boxes and the count grow (past it, a short row's
 dividers sit is the user's: AppKit saves and restores split-view
 divider positions with the window, over any SwiftUI ideal width.
 
+**The script preview is syntax-highlighted in-house.**
+`PascalTokenizer` (`ScriptGeneration/`, pure) splits the script into
+keyword / comment / string / number / plain runs, losslessly (joined, the
+runs are the script); `ScriptHighlighter` (`UI/`) colors them with system
+colors, leaving plain text uncolored so it follows light and dark mode.
+Only the preview is colored; Copy and Save… write the plain string. It
+knows only where comments (`{ }`, `(* *)`, `//`) and strings (`''`
+escapes, SQL inside) start and end, which is all the generator emits;
+`PascalTokenizerTests` also tokenizes real generated scripts and fails on
+a quote or brace left in plain text. Textual (Prism.js) was considered
+(2026-09-26): its Prism bundle has no Pascal, so it would have needed a
+fork, plus a JavaScript engine running on every edit.
+
 **The script pane is an `HSplitView`, not `.inspector`.** An
 `.inspector` in the `NavigationSplitView`'s detail column crashed the
 real app on the first rule added (AppKit "Update Constraints in Window"

@@ -344,6 +344,14 @@ final class ViewRenderingTests: XCTestCase {
         _ = view.body
     }
 
+    func test_givenGeneratedScript_whenPreviewing_thenItShowsTheScriptHighlighted() {
+        let model = SampleBuilderModel.forTesting()
+        let view = ScriptPreviewView(model: model)
+
+        XCTAssertEqual(view.highlightedScript, ScriptHighlighter.highlight(model.generatedScript))
+        XCTAssertTrue(view.highlightedScript.runs.contains { $0.foregroundColor != nil })
+    }
+
     // MARK: - Copy (toolbar and Edit > Copy Script)
 
     func test_givenTheWindowsCopyAction_whenCopying_thenTheClipboardReceivesTheScript() {

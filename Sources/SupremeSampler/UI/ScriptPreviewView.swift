@@ -10,6 +10,12 @@ struct ScriptPreviewView: View {
 
     var model: SampleBuilderModel
 
+    /// The script with Pascal syntax colors (`ScriptHighlighter`). Only the
+    /// preview is colored; Copy and Save… still write the plain text.
+    var highlightedScript: AttributedString {
+        ScriptHighlighter.highlight(model.generatedScript)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Generated Script")
@@ -19,7 +25,7 @@ struct ScriptPreviewView: View {
             // file one source line per line, and its error positions are
             // line numbers, so the preview keeps the same lines.
             ScrollView([.horizontal, .vertical]) {
-                Text(model.generatedScript)
+                Text(highlightedScript)
                     .font(.system(.callout, design: .monospaced))
                     .textSelection(.enabled)
                     .fixedSize()
