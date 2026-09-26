@@ -610,6 +610,9 @@ Run `just` for the full list. Common ones:
 - `just xcode` — regenerate, then open in Xcode
 - `just dmg` / `just dmg-headless` — package the DMG (see Releases and CI)
 - `just release X.Y.Z` — bump, commit, tag and push a release
+- `just install` — build the latest stable `vX.Y.Z` tag in a throwaway
+  worktree and copy it to `/Applications` under the name that tag built
+  (refuses while the app runs; removes a copy under the other name)
 
 ## Releases and CI
 

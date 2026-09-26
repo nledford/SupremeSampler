@@ -143,6 +143,54 @@ trust path="dist/SupremeSampler.app":
     echo "cleared quarantine on $target"
     echo "note: spctl still rejects an ad-hoc signature; that is expected and does not block launch."
 
+# Build the latest stable release tag and install it in /Applications.
+install:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    git fetch --tags --quiet origin
+    # Stable means a plain vX.Y.Z tag; hand-made prereleases (v0.3.0-beta.1)
+    # are skipped. sort -V orders 0.10.0 after 0.9.0, unlike plain sort.
+    tag="$(git tag -l 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1)"
+    test -n "$tag" || { echo "no stable vX.Y.Z tag found" >&2; exit 1; }
+
+    # Releases up to v0.2.0 were named SupremeSampler (bundle and process);
+    # later ones are named Supreme Sampler. Check for either running.
+    if pgrep -x 'SupremeSampler|Supreme Sampler' >/dev/null; then
+        echo "Supreme Sampler is running; quit it before installing $tag" >&2
+        exit 1
+    fi
+
+    # Build in a throwaway worktree so the current checkout (and any
+    # uncommitted work in it) is untouched, using the tag's own Justfile.
+    tree="$(mktemp -d)"
+    trap 'git worktree remove --force "$tree" >/dev/null 2>&1 || true; rm -rf "$tree"' EXIT
+    git worktree add --detach --quiet "$tree" "$tag"
+    echo "building $tag"
+    just --justfile "$tree/Justfile" --working-directory "$tree" verify-app
+
+    # Install the bundle under the name the tag built it with, rather than
+    # renaming it here: a rename would be a second copy of the name.
+    shopt -s nullglob
+    built=("$tree"/dist/*.app)
+    test "${#built[@]}" -eq 1 || { echo "expected one .app in dist/, found ${#built[@]}" >&2; exit 1; }
+    bundle="$(basename "${built[0]}")"
+    dest="/Applications/$bundle"
+
+    # Copy next to the destination first, then swap, so a failed copy never
+    # leaves /Applications without the app.
+    staged="/Applications/.$bundle.installing"
+    rm -rf "$staged"
+    ditto "${built[0]}" "$staged"
+    rm -rf "$dest"
+    mv "$staged" "$dest"
+    # A copy under the other name would otherwise sit beside this one.
+    for other in "/Applications/SupremeSampler.app" "/Applications/Supreme Sampler.app"; do
+        if [ "$other" != "$dest" ]; then
+            rm -rf "$other"
+        fi
+    done
+    echo "installed $tag at $dest"
+
 # Check that a release tag matches MARKETING_VERSION in project.yml.
 release-check tag:
     scripts/release-version.sh check {{quote(tag)}}
