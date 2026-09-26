@@ -30,8 +30,8 @@ targets:
         # it. The module keeps the space-free name code imports.
         PRODUCT_NAME: Supreme Sampler
         PRODUCT_MODULE_NAME: SupremeSampler
-        MARKETING_VERSION: "0.2.0"
-        CURRENT_PROJECT_VERSION: "2"
+        MARKETING_VERSION: "0.3.0"
+        CURRENT_PROJECT_VERSION: "3"
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_NSHumanReadableCopyright: ""
         INFOPLIST_KEY_NSPrincipalClass: NSApplication
