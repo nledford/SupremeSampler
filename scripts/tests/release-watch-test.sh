@@ -237,7 +237,10 @@ echo '101 CI' > "$state/runs"
 echo 2 > "$state/list-fail-after"
 watch v0.3.1
 assert_status 3 test_givenListingWorkedThenFailedLast_whenARunNeverStarts_thenItSaysWhichNeverStarted
-assert_stderr_contains 'Release' test_givenListingWorkedThenFailedLast_whenARunNeverStarts_thenItSaysWhichNeverStarted
+# The exact list: only Release was missing when a listing last worked;
+# the failed last check would have made it "CI Release".
+assert_stderr_contains 'no run started for Release on' \
+    test_givenListingWorkedThenFailedLast_whenARunNeverStarts_thenItSaysWhichNeverStarted
 
 # --- Scenario 7: a release published late is waited for --------------------
 given_release v0.3.1
