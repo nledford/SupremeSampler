@@ -204,7 +204,7 @@ final class ScriptFileNameTests: XCTestCase {
     /// A capital near the start mustn't win over keeping the text: with
     /// one very long word, the cut falls at the limit rather than just
     /// after "NotPath" (review, 2026-09-26: this once came out as
-    /// `RandomNotEtc.psc`, dropping the text).
+    /// `RandomNotPathEtc.psc`, dropping the text).
     func test_givenOneVeryLongWord_whenCapped_thenItKeepsTheTextUpToTheLimit() {
         let word = String(repeating: "abcdefghij", count: 7)
         let suggested = name([.path(PathFilter(kind: .contains, text: word, negated: true))])

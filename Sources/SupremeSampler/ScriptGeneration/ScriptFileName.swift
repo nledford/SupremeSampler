@@ -21,8 +21,9 @@ enum ScriptFileName {
     /// Roughly how long the part after `Random` may grow before the rest
     /// becomes `Etc`: an "all of" root stops at a rule boundary; anything
     /// else still too long (one long rule, a nested group, an "any of"
-    /// root) is cut where a word begins. Keeps every name far under the
-    /// 255-byte limit macOS puts on a file name.
+    /// root) is cut as `capped` describes -- before a capital in the
+    /// limit's second half, else at the limit. Keeps every name far under
+    /// the 255-byte limit macOS puts on a file name.
     static let softLimit = 60
 
     private static let prefix = "Random"
