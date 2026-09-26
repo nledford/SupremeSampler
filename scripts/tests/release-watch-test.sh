@@ -23,6 +23,7 @@ scenario=0
 #   runs-delay      `run list` calls that print nothing first (default 0)
 #   list-fail       `run list` calls that fail first, as gh does on a
 #                   network or API error (default 0; "all" = every call)
+#   list-fail-after `run list` calls after this many fail (default: none)
 #   watch-<id>      exit status of `run watch <id>` (default 0)
 #   conclusion-<id> what `run view <id>` reports (default success);
 #                   "__ERROR__" makes `run view` itself fail
@@ -46,7 +47,8 @@ case "$1 $2" in
     "run list")
         n="$(count list)"
         fails="$(cat "$state/list-fail" 2>/dev/null || echo 0)"
-        if [ "$fails" = all ] || [ "$n" -le "$fails" ]; then
+        after="$(cat "$state/list-fail-after" 2>/dev/null || echo '')"
+        if [ "$fails" = all ] || [ "$n" -le "$fails" ] || { [ -n "$after" ] && [ "$n" -gt "$after" ]; }; then
             echo "error connecting to api.github.com" >&2
             exit 1
         fi
@@ -225,6 +227,17 @@ watch v0.3.1
 assert_status 6 test_givenGhFailsEveryTimeItListsRuns_whenWatching_thenItReportsGitHubCouldNotBeRead
 assert_stderr_contains 'error connecting to api.github.com' \
     test_givenGhFailsEveryTimeItListsRuns_whenWatching_thenItReportsGitHubCouldNotBeRead
+
+# --- Scenario 6d: listing that worked, then failed last, isn't "unreadable"
+# Review, 2026-09-26: exit 6 was decided by the last check alone, so a
+# blip at the end hid that earlier checks had listed runs and Release had
+# never started.
+given_release v0.3.1
+echo '101 CI' > "$state/runs"
+echo 2 > "$state/list-fail-after"
+watch v0.3.1
+assert_status 3 test_givenListingWorkedThenFailedLast_whenARunNeverStarts_thenItSaysWhichNeverStarted
+assert_stderr_contains 'Release' test_givenListingWorkedThenFailedLast_whenARunNeverStarts_thenItSaysWhichNeverStarted
 
 # --- Scenario 7: a release published late is waited for --------------------
 given_release v0.3.1

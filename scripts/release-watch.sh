@@ -55,13 +55,18 @@ sha="$(git rev-list -n 1 "$tag" 2>/dev/null)" || {
 # under `set -u`.
 # A failed listing (network, API) is another check to retry, not the end
 # of the watch: under `set -e` a bare `runs="$(...)"` would exit 1 here.
+# `listed` remembers whether any check got an answer, so a failure on the
+# last check alone isn't reported as GitHub being unreadable.
 list_error=""
+listed=""
 attempt=0
 while :; do
     attempt=$((attempt + 1))
     if runs="$("$gh_cmd" run list --commit "$sha" \
         --json databaseId,workflowName --jq '.[] | "\(.databaseId) \(.workflowName)"' 2>"$err_file")"; then
         list_error=""
+        listed=yes
+        last_runs="$runs"
     else
         runs=""
         list_error="$(cat "$err_file")"
@@ -72,10 +77,15 @@ while :; do
     done
     [ -z "$missing" ] && break
     if [ "$attempt" -ge "$attempts" ]; then
-        if [ -n "$list_error" ] && [ -z "$runs" ]; then
+        if [ -z "$listed" ]; then
             echo "couldn't list runs for $tag ($sha) after $attempts checks; gh said: $list_error" >&2
             exit 6
         fi
+        # Name what was missing as of the last check that got an answer.
+        missing=""
+        for workflow in $required_workflows; do
+            printf '%s\n' "$last_runs" | grep -q " $workflow\$" || missing="$missing $workflow"
+        done
         echo "no run started for$missing on $tag ($sha) after $attempts checks" >&2
         exit 3
     fi
