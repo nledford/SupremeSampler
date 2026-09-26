@@ -633,15 +633,27 @@ touching it:
   enshrined the wrong value instead of catching it, because it was
   hand-copied from the generator's own output rather than the source of
   truth. `RandomSampleScriptGeneratorTests` now includes a test that
-  reads the real file directly and compares line-for-line (skipped, not
-  failed, if that file isn't present on the machine running the test) —
-  keep that test whenever the boilerplate changes, don't just update
-  `invariantLines` by hand.
-  **Cross-repo tests read the reference through `ReferenceScript.load()`**
-  (`TestSupport.swift`), which normalizes CRLF to LF and uses the file's
-  own `SAMPLE_SIZE`. Reading it raw once made that test silently compare
-  zero lines and pass: the working copy had been re-saved with CRLF, so no
-  line equalled `const`. It now also fails if it compares almost nothing.
+  compares against the real file line-for-line — keep that test whenever
+  the boilerplate changes, don't just update `invariantLines` by hand.
+  **The reference is vendored**, at
+  `Tests/SupremeSamplerTests/Fixtures/RandomCatalogSample.psc`, read
+  through `ReferenceScript.load()` (`TestSupport.swift`), which
+  normalizes CRLF to LF and uses the file's own `SAMPLE_SIZE`. It used to
+  be read from the sibling repo's *working copy*, which was wrong twice
+  over: this app writes generated scripts into that directory, so a save
+  could overwrite the oracle with the generator's own output (a
+  comparison that passes no matter what the boilerplate says), and a
+  dirty working copy in another repo failed these tests for reasons no
+  change here could fix (2026-09-26: three failures, all from a save that
+  had landed there). Reading it raw once made the test silently compare
+  zero lines and pass: the working copy had been re-saved with CRLF, so
+  no line equalled `const`. It now also fails if it compares almost
+  nothing. To re-vendor after re-verifying the script in Script Studio,
+  run `TEST_RUNNER_SUPREME_SAMPLER_LIVE_REFERENCE=1 just test` — the
+  opt-in `test_givenTheLiveReferenceScript_…` case compares the fixture
+  against the working copy and fails on drift (`xcodebuild` forwards
+  shell variables prefixed `TEST_RUNNER_` to the test process, stripping
+  the prefix).
 
 - **Folder balance** (`FolderBalance`, `FolderBalanceSQL`): Off / Balanced
   / Equal weight each folder (`idCatalogItem.PathGUID`, the photo's own

@@ -16,17 +16,45 @@ extension SampleBuilderModel {
     }
 }
 
-/// The real, verified-compiling script in the sibling scripts repo that
-/// the generator's boilerplate was transcribed from. Read from the
-/// working copy, which may carry harmless local edits, so two things are
-/// normalized away before comparing: line endings (Script Studio saves
-/// CRLF; the committed file is LF) and the `SAMPLE_SIZE` value, which is
-/// a parameter of the generator rather than boilerplate.
+/// The frozen, hand-verified `RandomCatalogSample.psc` the generator's
+/// boilerplate was transcribed from, vendored into `Fixtures/` so the
+/// comparison is hermetic.
+///
+/// It used to be read from the sibling scripts repo's *working copy*
+/// (`~/Projects/pascal/photo supreme/RandomCatalogSample.psc`). That made
+/// the oracle mutable, in two ways that both bit:
+///
+/// - **Tautology.** This app writes generated scripts into that
+///   directory. A save could overwrite the reference with the
+///   generator's own output, and the comparison then passes no matter
+///   what the boilerplate says -- generator output against generator
+///   output.
+/// - **Non-hermetic.** A dirty working copy in another repo failed these
+///   tests for reasons that had nothing to do with this one (seen
+///   2026-09-26: the file had been overwritten by a save, so the suite
+///   reported three failures that no change here could fix).
+///
+/// `LiveReferenceScript` below keeps the old cross-repo comparison as an
+/// opt-in check, for re-vendoring after the script is re-verified in
+/// Script Studio.
+///
+/// Two things are normalized away before comparing: line endings (Script
+/// Studio saves CRLF; the committed file is LF) and the `SAMPLE_SIZE`
+/// value, which is a parameter of the generator rather than boilerplate.
 enum ReferenceScript {
-    static let path = FileManager.default.homeDirectoryForCurrentUser
-        .appendingPathComponent("Projects/pascal/photo supreme/RandomCatalogSample.psc").path
+    /// `#filePath` is a compile-time literal holding this source file's
+    /// absolute path, so the fixture is found relative to the checkout
+    /// rather than to the built bundle -- the same trick Rust's
+    /// `file!()`/`include_str!` and Python's `__file__` use.
+    static let path = URL(fileURLWithPath: #filePath)
+        .deletingLastPathComponent()
+        .appendingPathComponent("Fixtures/RandomCatalogSample.psc")
+        .path
 
-    /// `nil` when the scripts repo isn't on this machine.
+    /// `nil` if the vendored fixture is missing from the checkout (a
+    /// repository defect, not a machine difference) or if its
+    /// `SAMPLE_SIZE` line can't be read -- the callers `XCTUnwrap` it, so
+    /// either way the test fails loudly rather than comparing nothing.
     static func load() -> (text: String, sampleSize: Int)? {
         guard let raw = try? String(contentsOfFile: path, encoding: .utf8) else { return nil }
         let text = raw.replacingOccurrences(of: "\r\n", with: "\n")
@@ -34,6 +62,38 @@ enum ReferenceScript {
         // `Regex::captures` -- `.1` is the first capture group.
         guard let match = text.firstMatch(of: /SAMPLE_SIZE = (\d+);/), let size = Int(match.1) else { return nil }
         return (text, size)
+    }
+
+    /// The lines that must match the generator's output verbatim: from
+    /// the first `const` on (each file has its own header comment before
+    /// that), blanks dropped, and the `SAMPLE_SIZE` assignment dropped
+    /// because it's a generator parameter.
+    ///
+    /// Blank lines are filtered for two reasons: they aren't meaningful
+    /// to assert on, and, unlike Python's `"" in "abc"` or JS's
+    /// `"abc".includes("")` (both `true`), Swift's `String.contains(_:)`
+    /// returns `false` for an empty needle -- every blank line would
+    /// otherwise fail a `contains` loop for a reason that has nothing to
+    /// do with the thing being tested.
+    static func bodyLines(of text: String) -> [Substring] {
+        text.split(separator: "\n", omittingEmptySubsequences: false)
+            .drop { $0 != "const" }
+            .filter { !$0.isEmpty && !$0.contains("SAMPLE_SIZE = ") }
+    }
+}
+
+/// The sibling scripts repo's working copy, for the opt-in re-vendoring
+/// check only. Never read by the default suite: it is a file this app
+/// itself writes to, so it legitimately differs from the vendored
+/// fixture whenever a script was last saved there.
+enum LiveReferenceScript {
+    static let path = FileManager.default.homeDirectoryForCurrentUser
+        .appendingPathComponent("Projects/pascal/photo supreme/RandomCatalogSample.psc").path
+
+    /// `nil` when the scripts repo isn't on this machine.
+    static func load() -> String? {
+        guard let raw = try? String(contentsOfFile: path, encoding: .utf8) else { return nil }
+        return raw.replacingOccurrences(of: "\r\n", with: "\n")
     }
 }
 

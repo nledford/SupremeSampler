@@ -3,12 +3,15 @@ import XCTest
 @testable import SupremeSampler
 
 /// Specifies the on-disk format of a saved script: the same as the
-/// committed, verified-compiling `RandomCatalogSample.psc` in the scripts
-/// repo -- UTF-8 with LF line endings and no byte-order mark. (Script
-/// Studio itself re-saves files with CRLF, which also compiles, but turns
-/// every line of a committed script into a git diff; the repo's history
-/// is the curation audit trail, so files are written the way they're
-/// committed.)
+/// committed, verified-compiling `RandomCatalogSample.psc` -- UTF-8 with
+/// LF line endings and no byte-order mark. (Script Studio itself re-saves
+/// files with CRLF, which also compiles, but turns every line of a
+/// committed script into a git diff; the repo's history is the curation
+/// audit trail, so files are written the way they're committed.)
+///
+/// The reference script itself is vendored into `Fixtures/` -- see
+/// `ReferenceScript` for why it is no longer read from the sibling repo's
+/// working copy.
 final class PSCFileTests: XCTestCase {
     func test_givenAScriptWithCRLFLineEndings_whenEncoding_thenTheyBecomeLF() {
         let data = PSCFile.encode("begin\r\n  OpenRandomSample;\r\nend;\r\n")
@@ -25,9 +28,9 @@ final class PSCFileTests: XCTestCase {
     }
 
     func test_givenAnUnfilteredScript_whenEncoding_thenTheBodyIsByteIdenticalToTheVerifiedReferenceScript() throws {
-        guard let (reference, referenceSampleSize) = ReferenceScript.load() else {
-            throw XCTSkip("RandomCatalogSample.psc not found at \(ReferenceScript.path) -- skipping cross-repo check")
-        }
+        let (reference, referenceSampleSize) = try XCTUnwrap(
+            ReferenceScript.load(),
+            "vendored reference script missing at \(ReferenceScript.path)")
         let encoded = PSCFile.encode(RandomSampleScriptGenerator.generate(sampleSize: referenceSampleSize))
 
         // Everything from the first `const` on is meant to be identical;

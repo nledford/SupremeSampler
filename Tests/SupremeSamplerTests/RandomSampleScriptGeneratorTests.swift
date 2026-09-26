@@ -74,38 +74,27 @@ final class RandomSampleScriptGeneratorTests: XCTestCase {
     /// exact failure mode happened once already during development --
     /// `invariantLines` briefly asserted `"end."`, matching a bug in the
     /// generator, instead of the real file's `"end;"`). This test closes
-    /// that gap by reading the actual sibling-repo file directly, so
-    /// neither side can be silently "corrected" to match the other.
+    /// that gap by comparing against the vendored copy of the actual
+    /// sibling-repo file, so neither side can be silently "corrected" to
+    /// match the other.
     ///
-    /// Skips (doesn't fail) if that file isn't present -- it's a
-    /// different git repo on the same machine, not something this
-    /// repo/CI necessarily has checked out. `throw XCTSkip(...)` is
-    /// Swift/XCTest's way of marking a test inconclusive rather than
-    /// pass or fail, similar in spirit to `pytest.skip(...)` or Rust's
-    /// `#[ignore]`, except decided at runtime here rather than
-    /// declared up front.
+    /// The reference is vendored into `Fixtures/` rather than read from
+    /// the sibling repo's working copy -- see `ReferenceScript` for why
+    /// (the app writes into that directory, so the working copy is not a
+    /// trustworthy oracle, and reading it made this suite non-hermetic).
+    /// `test_givenTheLiveReferenceScript_whenComparedToTheVendoredFixture_thenTheyMatch`
+    /// below is the opt-in check that the vendored copy is still current.
     func test_givenNoFilter_whenGenerating_thenMatchesRealScriptVerbatimLineForLine() throws {
-        guard let (realScript, realSampleSize) = ReferenceScript.load() else {
-            throw XCTSkip("RandomCatalogSample.psc not found at \(ReferenceScript.path) -- skipping cross-repo check")
-        }
+        let (realScript, realSampleSize) = try XCTUnwrap(
+            ReferenceScript.load(),
+            "vendored reference script missing at \(ReferenceScript.path)")
 
         // Lines 1-13 of the real file are its own header comment block,
         // which SupremeSampler's generator intentionally replaces with
         // its own (see RandomSampleScriptGenerator.headerLines) rather
         // than reproducing verbatim -- everything else, starting from
         // "const", is meant to be identical for an unfiltered sample.
-        // Blank lines filtered out for two reasons: they're not
-        // meaningful to assert on (the generated file's blank-line
-        // layout doesn't need to match the real file's), and, unlike
-        // Python's `"" in "abc"` or JS's `"abc".includes("")` (both
-        // `true`), Swift's `String.contains(_:)` returns `false` for an
-        // empty needle -- every blank line would otherwise fail this
-        // loop for a reason that has nothing to do with the thing being
-        // tested.
-        let realBodyLines = realScript
-            .split(separator: "\n", omittingEmptySubsequences: false)
-            .drop { $0 != "const" }
-            .filter { !$0.isEmpty }
+        let realBodyLines = ReferenceScript.bodyLines(of: realScript)
 
         let generated = RandomSampleScriptGenerator.generate(sampleSize: realSampleSize, generatedAt: fixedDate)
 
@@ -119,6 +108,42 @@ final class RandomSampleScriptGeneratorTests: XCTestCase {
                 generated.contains(line),
                 "generated output is missing this exact line from the real script: \(line)")
         }
+    }
+
+    /// Opt-in, and skipped by default: confirms the vendored fixture still
+    /// matches the sibling scripts repo's working copy, so re-vendoring
+    /// after the script is re-verified in Script Studio is a deliberate
+    /// act rather than a silent drift.
+    ///
+    /// Skipped by default because the working copy is a file this app
+    /// itself writes to -- it legitimately differs from the fixture
+    /// whenever a script was last saved there, which is not a defect.
+    /// Run it with `TEST_RUNNER_SUPREME_SAMPLER_LIVE_REFERENCE=1 just test`
+    /// (`xcodebuild` forwards shell variables prefixed `TEST_RUNNER_` to
+    /// the test process, stripping the prefix; a bare variable never
+    /// reaches it).
+    ///
+    /// It compares against the *working copy*, not the sibling repo's
+    /// committed `HEAD` -- so it answers "has the script on disk changed
+    /// since we vendored it?", which is the question that matters when
+    /// re-vendoring, but it cannot by itself prove the fixture matches
+    /// what that repo has committed. Check that with
+    /// `git -C ~/Projects/pascal/photo\ supreme show HEAD:RandomCatalogSample.psc`
+    /// when it matters.
+    func test_givenTheLiveReferenceScript_whenComparedToTheVendoredFixture_thenTheyMatch() throws {
+        guard ProcessInfo.processInfo.environment["SUPREME_SAMPLER_LIVE_REFERENCE"] == "1" else {
+            throw XCTSkip("set SUPREME_SAMPLER_LIVE_REFERENCE=1 to compare against the sibling repo's working copy")
+        }
+        guard let live = LiveReferenceScript.load() else {
+            throw XCTSkip("RandomCatalogSample.psc not found at \(LiveReferenceScript.path)")
+        }
+        let (vendored, _) = try XCTUnwrap(ReferenceScript.load())
+
+        let liveBody = ReferenceScript.bodyLines(of: live)
+        XCTAssertGreaterThan(liveBody.count, 100, "compared almost nothing -- is the live script's format different?")
+        XCTAssertEqual(
+            liveBody, ReferenceScript.bodyLines(of: vendored),
+            "the sibling repo's script has changed since it was vendored -- re-verify it in Script Studio, then re-copy it into Tests/SupremeSamplerTests/Fixtures/")
     }
 
     // MARK: - Sample size
