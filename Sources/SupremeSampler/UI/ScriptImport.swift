@@ -15,7 +15,7 @@ struct ScriptImport: Equatable {
     let url: URL
     let script: ReadScript
     let rules: RuleGroupDraft
-    /// Picked keywords the open catalog doesn't have.
+    /// Keywords the script names that the open catalog doesn't have.
     let missingKeywordCount: Int
     /// The rules, expanded against the open catalog, don't match the
     /// same keywords the script does.
@@ -24,10 +24,25 @@ struct ScriptImport: Equatable {
     var sampleSize: Int { script.sampleSize }
     var folderBalance: FolderBalance { script.folderBalance }
 
+    /// The file asks for a larger sample than the window allows, so the
+    /// size on screen (and in a re-save) will be the cap instead.
+    var sampleSizeIsCapped: Bool { !SampleBuilderModel.sampleSizeRange.contains(script.sampleSize) }
+
     /// Whether to ask before opening: something in the file won't come
     /// back exactly as it is.
     var needsConfirmation: Bool {
-        !script.isExactlyAsGenerated || missingKeywordCount > 0 || keywordsResolveDifferently
+        !script.isExactlyAsGenerated || missingKeywordCount > 0 || keywordsResolveDifferently || sampleSizeIsCapped
+    }
+
+    /// What the status line adds after "Opened <file>" -- the one thing
+    /// saving over the file would change, most important first -- or
+    /// `nil` when saving would write the file back as it is.
+    var statusNote: String? {
+        if !script.isExactlyAsGenerated { return "saving replaces its hand edits" }
+        if missingKeywordCount > 0 || keywordsResolveDifferently { return "its keyword rules now match different keywords" }
+        if sampleSizeIsCapped { return "its sample size was capped" }
+        if script.isOlderFormat { return "saving upgrades its script format" }
+        return nil
     }
 
     init(url: URL, script: ReadScript, tree: [CatalogPropNode]) {
@@ -46,8 +61,7 @@ struct ScriptImport: Equatable {
 
         let rules = RuleGroupDraft(importing: script.filter.root, parents: parents)
         self.rules = rules
-        let picked = Self.pickedGUIDs(in: rules)
-        missingKeywordCount = picked.subtracting(known).count
+        missingKeywordCount = Self.keywordGUIDs(in: script.filter.root).subtracting(known).count
         keywordsResolveDifferently =
             SQLPredicateText.render(SampleFilter(root: rules.domainGroup(resolvingCategoriesIn: tree)))
             != SQLPredicateText.render(script.filter)
@@ -75,7 +89,13 @@ struct ScriptImport: Equatable {
         }
         if missingKeywordCount > 0 {
             notices.append(
-                "\(Self.count(missingKeywordCount, "picked keyword")) \(missingKeywordCount == 1 ? "isn't" : "aren't") in the open catalog.")
+                "\(missingKeywordCount) of its keywords \(missingKeywordCount == 1 ? "isn't" : "aren't") in the open catalog.")
+        }
+        if sampleSizeIsCapped {
+            let cap = SampleBuilderModel.sampleSizeRange.upperBound
+            notices.append(
+                "Its sample size, \(script.sampleSize.formatted()), is more than the largest allowed, "
+                    + "so it will be \(cap.formatted()).")
         }
         if keywordsResolveDifferently {
             notices.append(
@@ -108,17 +128,20 @@ struct ScriptImport: Equatable {
         text.count <= 80 ? text : String(text.prefix(77)) + "…"
     }
 
-    private static func pickedGUIDs(in group: RuleGroupDraft) -> Set<String> {
-        group.rules.reduce(into: Set<String>()) { picked, rule in
-            switch rule.content {
-            case .keyword(let keyword) where keyword.operator.picksKeywords: picked.formUnion(keyword.selectedGUIDs)
-            case .group(let nested): picked.formUnion(pickedGUIDs(in: nested))
+    /// Every keyword GUID the filter's keyword rules list.
+    private static func keywordGUIDs(in group: RuleGroup) -> Set<String> {
+        group.rules.reduce(into: Set<String>()) { guids, rule in
+            switch rule {
+            case .category(let category): guids.formUnion(category.allPropGUIDs)
+            case .group(let nested): guids.formUnion(keywordGUIDs(in: nested))
             default: break
             }
         }
     }
 }
 
+// `extension` adds initializers to types declared elsewhere -- like a
+// second Rust `impl` block for the same struct.
 extension RuleGroupDraft {
     /// The rows that would build `group`. `parents` maps each keyword GUID
     /// to its parent's, for turning keyword lists back into picks.
@@ -134,19 +157,28 @@ extension RuleDraft {
             let (comparison, value) = Self.comparison(rating)
             self.init(.rating(RatingRuleDraft(comparison: comparison, value: value)))
         case .category(let category):
+            // "All of" keeps one test per branch; "any"/"none" have one
+            // list for all of them.
+            let picksPerBranch = category.branches.map { Self.picks(listed: $0.propGUIDs, parents: parents) }
             let op: KeywordOperator
             switch category.mode {
             case .any: op = .isAnyOf
-            case .all: op = .isAllOf
             case .none: op = .isNoneOf
+            case .all:
+                // `(a AND b)` over keyword lists is also what a group of
+                // "is any of" rows writes (and `(a)` a group of one). A
+                // list that isn't one branch came from such a row: keep
+                // those rows, or "any of a, b" would become "all of".
+                guard picksPerBranch.allSatisfy({ $0.count == 1 }) else {
+                    let rows = picksPerBranch.map {
+                        RuleDraft(.keyword(KeywordRuleDraft(operator: .isAnyOf, selectedGUIDs: $0)))
+                    }
+                    self.init(.group(RuleGroupDraft(match: .all, rules: rows)))
+                    return
+                }
+                op = .isAllOf
             }
-            // "All of" keeps one test per branch; "any"/"none" have one
-            // list for all of them. Either way, a pick is a listed keyword
-            // whose parent isn't listed with it.
-            let picks = category.branches.reduce(into: Set<String>()) { picks, branch in
-                let listed = Set(branch.propGUIDs)
-                picks.formUnion(listed.filter { parents[$0].map(listed.contains) != true })
-            }
+            let picks = picksPerBranch.reduce(into: Set<String>()) { $0.formUnion($1) }
             self.init(.keyword(KeywordRuleDraft(operator: op, selectedGUIDs: picks)))
         case .keywordPath(let keywordPath):
             self.init(.keyword(KeywordRuleDraft(operator: Self.keywordOperator(keywordPath), text: keywordPath.text)))
@@ -175,6 +207,15 @@ extension RuleDraft {
         case .group(let group):
             self.init(.group(RuleGroupDraft(importing: group, parents: parents)))
         }
+    }
+
+    /// The keywords a list was expanded from: those whose parent isn't
+    /// listed with them. All of them if that leaves none (a keyword that
+    /// is its own ancestor, which the tree's depth cap allows).
+    private static func picks(listed guids: [String], parents: [String: String]) -> Set<String> {
+        let listed = Set(guids)
+        let tops = listed.filter { parents[$0].map(listed.contains) != true }
+        return tops.isEmpty ? listed : tops
     }
 
     private static func comparison(_ rating: RatingFilter) -> (NumberComparisonKind, Int) {

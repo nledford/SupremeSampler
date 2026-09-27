@@ -81,4 +81,48 @@ enum RandomRuleTrees {
         let rules = (0..<Int.random(in: 0...3, using: &rng)).map { _ in randomRule(depth: depth, using: &rng) }
         return RuleGroup(match: match, rules: rules)
     }
+
+    /// A random rule-builder state -- rows as the controls hold them --
+    /// with keyword picks drawn from `keywordGUIDs`.
+    static func randomDraftGroup(depth: Int, keywordGUIDs: [String], using rng: inout SeededGenerator) -> RuleGroupDraft {
+        let match = [GroupMatch.all, .any, .none].randomElement(using: &rng)!
+        let rules = (0..<Int.random(in: 0...3, using: &rng)).map { _ in
+            randomDraftRule(depth: depth, keywordGUIDs: keywordGUIDs, using: &rng)
+        }
+        return RuleGroupDraft(match: match, rules: rules)
+    }
+
+    private static func randomDraftRule(depth: Int, keywordGUIDs: [String], using rng: inout SeededGenerator) -> RuleDraft {
+        func picks(_ pool: [String]) -> Set<String> {
+            Set((0..<Int.random(in: 0...3, using: &rng)).map { _ in pool.randomElement(using: &rng)! })
+        }
+        let comparison = NumberComparisonKind.allCases.randomElement(using: &rng)!
+        switch Int.random(in: 0..<(depth > 0 ? 9 : 8), using: &rng) {
+        case 0:
+            return RuleDraft(.rating(RatingRuleDraft(comparison: comparison, value: Int.random(in: 0...5, using: &rng))))
+        case 1:
+            let op = KeywordOperator.allCases.randomElement(using: &rng)!
+            let text = ["", "trees", "Nature\\Pines", "O'Brien", "100%"].randomElement(using: &rng)!
+            return RuleDraft(.keyword(KeywordRuleDraft(operator: op, selectedGUIDs: picks(keywordGUIDs), text: text)))
+        case 2:
+            return RuleDraft(
+                .keywordCount(KeywordCountRuleDraft(comparison: comparison, value: Int.random(in: 0...4, using: &rng))))
+        case 3:
+            let text = ["", "/2019/", "x\\y", ".PNG"].randomElement(using: &rng)!
+            return RuleDraft(.path(PathRuleDraft(operator: PathOperator.allCases.randomElement(using: &rng)!, text: text)))
+        case 4:
+            return RuleDraft(
+                .label(LabelRuleDraft(mode: [.any, .none].randomElement(using: &rng)!, selectedLabels: picks(["", "Red", "選択"]))))
+        case 5:
+            return RuleDraft(
+                .fileType(FileTypeRuleDraft(mode: [.any, .none].randomElement(using: &rng)!, selectedTypes: picks(["", "jpg", "png"]))))
+        case 6:
+            return RuleDraft(
+                .bookmark(BookmarkRuleDraft(mode: [.any, .none].randomElement(using: &rng)!, selectedValues: picks(["0", "2", "5"]))))
+        case 7:
+            return RuleDraft(.pendingDeletion(PendingDeletionRuleDraft(isPending: Bool.random(using: &rng))))
+        default:
+            return RuleDraft(.group(randomDraftGroup(depth: depth - 1, keywordGUIDs: keywordGUIDs, using: &rng)))
+        }
+    }
 }

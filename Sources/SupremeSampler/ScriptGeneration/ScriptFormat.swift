@@ -14,9 +14,13 @@ import Foundation
 ///
 /// To change what the generator writes: copy the current format into a
 /// frozen type that keeps producing the old text (it's how old files are
-/// recognized), bump `RandomSampleScriptGenerator.formatVersion`, add the
-/// new format to `ScriptFormats.all`, and override `settings(in:)` in the
-/// new one only if the way settings are stored changed.
+/// recognized) -- all of it, including the SQL `SQLPredicateText` renders
+/// for it and constants like `KeywordPathFilter.keywordPathsQuery`, since
+/// `ScriptFormat1` calls the live generator -- bump
+/// `RandomSampleScriptGenerator.formatVersion`, add the new format to
+/// `ScriptFormats.all`, and override `settings(in:)` in the new one only
+/// if the way settings are stored changed. `GoldenScriptTests` fails when
+/// format 1's output changes, which is the reminder.
 protocol ScriptFormat {
     var version: Int { get }
 
@@ -42,6 +46,9 @@ struct ScriptFormatError: Error, Equatable {
 
 enum ScriptFormats {
     /// Every format this version of the app can read, oldest first.
+    /// `any ScriptFormat` is a value of some type conforming to the
+    /// protocol, chosen at run time -- Rust's `Box<dyn ScriptFormat>`, or
+    /// a C# variable typed as the interface.
     static let all: [any ScriptFormat] = [ScriptFormat1()]
 
     /// What saving writes.
@@ -53,11 +60,15 @@ enum ScriptFormats {
     static func stamp(version: Int) -> String { stampPrefix + String(version) }
 
     /// The version a script's header names; 1 for a script saved before
-    /// the stamp existed. `nil` for a stamp that isn't a number.
+    /// the stamp existed. `nil` for a stamp that isn't exactly
+    /// `Script format: <number>`, or more than one stamp.
     static func version(of lines: [String]) -> Int? {
         let headerEnd = lines.firstIndex(of: "}") ?? 0
-        guard let stamp = lines[..<headerEnd].first(where: { $0.hasPrefix(stampPrefix) }) else { return 1 }
-        return Int(stamp.dropFirst(stampPrefix.count))
+        let stamps = lines[..<headerEnd].filter { $0.hasPrefix(stampPrefix) }
+        guard let stamp = stamps.first else { return 1 }
+        guard stamps.count == 1, let version = Int(stamp.dropFirst(stampPrefix.count)), stamp == self.stamp(version: version)
+        else { return nil }
+        return version
     }
 }
 
@@ -88,6 +99,9 @@ extension ScriptFormat {
             predicate = filterText
         } else {
             return .failure(notOurs)
+        }
+        if let predicate, SQLScanner.nesting(predicate) > SQLPredicateReader.maximumNesting {
+            return .failure(ScriptFormatError(reason: "Its query nests far deeper than Supreme Sampler ever writes."))
         }
         let reading = SQLPredicateReader.read(predicate)
         return .success(

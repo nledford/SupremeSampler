@@ -35,6 +35,15 @@ final class ScriptOpeningTests: XCTestCase {
         return model
     }
 
+    /// What the alert would confirm, as its button captures it.
+    private func pendingOpening(_ model: SampleBuilderModel, file: StaticString = #filePath, line: UInt = #line) -> ScriptImport? {
+        guard case .confirm(let opening) = model.scriptOpenPrompt else {
+            XCTFail("expected a confirmation, got \(String(describing: model.scriptOpenPrompt))", file: file, line: line)
+            return nil
+        }
+        return opening
+    }
+
     private func writeScript(
         named name: String = "RandomRated4Plus.psc", editing edit: (String) -> String = { $0 }
     ) throws -> URL {
@@ -140,7 +149,7 @@ final class ScriptOpeningTests: XCTestCase {
         let url = try writeScript { $0.replacingOccurrences(of: "Rating >= 4", with: "Rating > 4") }
 
         model.openScript(at: url)
-        model.confirmScriptOpen()
+        model.confirmScriptOpen(try XCTUnwrap(pendingOpening(model)))
 
         XCTAssertNil(model.scriptOpenPrompt)
         XCTAssertEqual(model.currentFilter, SampleFilter(root: RuleGroup(match: .all, rules: [.pendingDeletion(false)])))
@@ -163,6 +172,77 @@ final class ScriptOpeningTests: XCTestCase {
         XCTAssertNil(model.lastSavedScriptURL)
     }
 
+    func test_givenTheAlertWasAlreadyDismissed_whenItsButtonConfirms_thenTheScriptStillOpens() throws {
+        // SwiftUI may clear the alert's binding before running the button's
+        // action; the button carries what it confirms.
+        let model = modelWithCatalog()
+        let url = try writeScript { $0.replacingOccurrences(of: "Rating >= 4", with: "Rating > 4") }
+        model.openScript(at: url)
+        let opening = try XCTUnwrap(pendingOpening(model))
+
+        model.dismissScriptOpenPrompt()
+        model.confirmScriptOpen(opening)
+
+        XCTAssertEqual(model.sampleSize, 321)
+    }
+
+    func test_givenAPendingQuestion_whenAnotherCatalogOpens_thenTheQuestionGoesAndCannotBeConfirmed() async throws {
+        // Its keyword checks were made against the old catalog's tree.
+        let model = modelWithCatalog()
+        let url = try writeScript { $0.replacingOccurrences(of: "Rating >= 4", with: "Rating > 4") }
+        model.openScript(at: url)
+        let opening = try XCTUnwrap(pendingOpening(model))
+        let path = try makeMinimalCatalogFixture()
+        defer { try? FileManager.default.removeItem(atPath: path) }
+
+        model.openCatalog(at: path)
+        await model.waitForPendingCatalogOpenForTesting()
+        XCTAssertEqual(model.catalogPath, path)
+        model.confirmScriptOpen(opening)
+
+        XCTAssertNil(model.scriptOpenPrompt)
+        XCTAssertEqual(model.sampleSize, 10_000, "the stale question changed nothing")
+    }
+
+    func test_givenMoreThanTheLargestSampleSize_whenOpened_thenItAsksAndTheStatusSaysItWasCapped() throws {
+        let model = modelWithCatalog()
+        let url = try writeScript { $0.replacingOccurrences(of: "SAMPLE_SIZE = 321;", with: "SAMPLE_SIZE = 5000000;") }
+
+        model.openScript(at: url)
+        model.confirmScriptOpen(try XCTUnwrap(pendingOpening(model)))
+
+        XCTAssertEqual(model.sampleSize, SampleBuilderModel.sampleSizeRange.upperBound)
+        XCTAssertEqual(model.scriptFileStatus, "Opened RandomRated4Plus.psc; its sample size was capped")
+    }
+
+    func test_givenAScriptSavedAsUTF16_whenOpened_thenItOpens() throws {
+        let model = modelWithCatalog()
+        let url = folder.appendingPathComponent("Wide.psc")
+        let script = RandomSampleScriptGenerator.generate(sampleSize: 321, filter: savedFilter, folderBalance: .balanced)
+        try XCTUnwrap(script.data(using: .utf16)).write(to: url)
+
+        model.openScript(at: url)
+
+        XCTAssertNil(model.scriptOpenPrompt)
+        XCTAssertEqual(model.currentFilter, savedFilter)
+    }
+
+    func test_givenTheSameScriptOpenedTwice_thenTheSecondOpenChangesNothing() throws {
+        // Swapping in equal rules would only renumber the rows, and put a
+        // do-nothing "Open Script" step on the undo stack. (Checked by row
+        // identity: a test's hand-made undo groups keep even empty groups,
+        // unlike the app's per-event ones, so counting steps would mislead.)
+        let model = modelWithCatalog()
+        let url = try writeScript()
+        model.openScript(at: url)
+        let afterFirstOpen = model.rules
+
+        model.openScript(at: url)
+
+        XCTAssertEqual(model.rules, afterFirstOpen, "same rows, same identities")
+        XCTAssertEqual(model.scriptFileStatus, "Opened RandomRated4Plus.psc")
+    }
+
     // MARK: - Files that can't be opened
 
     func test_givenAFileThatIsNotASamplingScript_whenOpened_thenItSaysWhyAndChangesNothing() throws {
@@ -177,8 +257,22 @@ final class ScriptOpeningTests: XCTestCase {
         }
         XCTAssertEqual(fileName, "Notes.psc")
         XCTAssertTrue(model.rules.rules.isEmpty)
-        model.confirmScriptOpen()
-        XCTAssertTrue(model.rules.rules.isEmpty, "confirming an explanation opens nothing")
+    }
+
+    func test_givenAFileFarLargerThanAScript_whenOpened_thenItSaysSoWithoutReadingIt() throws {
+        let model = modelWithCatalog()
+        let url = folder.appendingPathComponent("Huge.psc")
+        FileManager.default.createFile(atPath: url.path, contents: nil)
+        let handle = try FileHandle(forWritingTo: url)
+        try handle.truncate(atOffset: UInt64(SampleBuilderModel.maximumScriptSize + 1))
+        try handle.close()
+
+        model.openScript(at: url)
+
+        guard case .cannotOpen(_, let reason) = model.scriptOpenPrompt else {
+            return XCTFail("expected an explanation, got \(String(describing: model.scriptOpenPrompt))")
+        }
+        XCTAssertTrue(reason.contains("larger"), reason)
     }
 
     func test_givenAMissingFile_whenOpened_thenItSaysWhy() {
