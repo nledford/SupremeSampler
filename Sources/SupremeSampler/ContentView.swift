@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 // `View` is another protocol (~ Rust trait / TS interface); conforming
 // types describe UI, they don't draw it directly. `ContentView` is a
@@ -16,13 +17,26 @@ struct ContentView: View {
     // The one place the real, `UserDefaults`-backed store is chosen.
     @State private var model = SampleBuilderModel(catalogStore: UserDefaultsRecentCatalogStore())
 
-    // Backs the menu-bar "Open Catalog…" command (see
-    // `SupremeSamplerApp.commands`) -- unlike `CatalogPickerView`'s own
-    // `isPickingFile`, this one has to live here rather than down in a
-    // child view, since the menu command needs to be able to trigger it
-    // regardless of which child view (`CatalogPickerView` or the
-    // `NavigationSplitView`) is currently showing.
-    @State private var isPickingCatalog = false
+    /// What the Open panel is picking, while it's up.
+    enum FilePick {
+        case catalog
+        case script
+    }
+
+    // Backs the menu-bar "Open Catalog…" and "Open Script…" commands (see
+    // `SupremeSamplerApp.commands`, `ScriptCommands`) -- unlike
+    // `CatalogPickerView`'s own `isPickingFile`, this one has to live here
+    // rather than down in a child view, since the menu command needs to be
+    // able to trigger it regardless of which child view
+    // (`CatalogPickerView` or the `NavigationSplitView`) is currently
+    // showing. One `.fileImporter` serves both: SwiftUI shows only one of
+    // several attached to the same view hierarchy. `filePick` outlives
+    // the panel: SwiftUI sets `isPickingFile` back to false *before*
+    // calling the completion, which reads `filePick` to know what was
+    // picked (clearing both together once sent a script to the catalog
+    // opener, seen on screen 2026-09-27).
+    @State private var filePick = FilePick.catalog
+    @State private var isPickingFile = false
 
     /// Which split-view columns show; the user can collapse the sidebar.
     @State private var columnVisibility: NavigationSplitViewVisibility
@@ -157,6 +171,24 @@ struct ContentView: View {
                 // ⌘S should still work. Scoped to the focused window, so
                 // with two windows open ⌘S saves the front one.
                 .focusedSceneValue(\.saveScriptAction, saveScriptAction)
+                .focusedSceneValue(\.openScriptAction, ScriptCommandAction(isEnabled: true) { pick(.script) })
+                // Asks before opening a script that won't come back exactly,
+                // or says why one can't be opened. `presenting:` hands the
+                // prompt to the buttons, like a render prop.
+                .alert(
+                    model.scriptOpenPrompt?.title ?? "", isPresented: isShowingScriptPrompt,
+                    presenting: model.scriptOpenPrompt
+                ) { prompt in
+                    switch prompt {
+                    case .confirm(let opening):
+                        Button(opening.confirmTitle) { model.confirmScriptOpen() }
+                        Button("Cancel", role: .cancel) { model.dismissScriptOpenPrompt() }
+                    case .cannotOpen:
+                        Button("OK", role: .cancel) { model.dismissScriptOpenPrompt() }
+                    }
+                } message: { prompt in
+                    Text(prompt.message)
+                }
                 .focusedSceneValue(\.copyScriptAction, ScriptCommandAction(isEnabled: true, perform: copyScript))
             }
         }
@@ -185,10 +217,34 @@ struct ContentView: View {
         // app would be a global event bus/`EventEmitter` instead of
         // passing a callback down through props.
         .onReceive(NotificationCenter.default.publisher(for: .openCatalogRequested)) { _ in
-            isPickingCatalog = true
+            pick(.catalog)
         }
-        .fileImporter(isPresented: $isPickingCatalog, allowedContentTypes: [.item]) { result in
-            handleCatalogFileImporterResult(result)
+        .fileImporter(isPresented: $isPickingFile, allowedContentTypes: allowedContentTypes) { result in
+            switch filePick {
+            case .script: handleScriptFileImporterResult(result)
+            case .catalog: handleCatalogFileImporterResult(result)
+            }
+        }
+    }
+
+    private func pick(_ kind: FilePick) {
+        filePick = kind
+        isPickingFile = true
+    }
+
+    /// Whether the script alert is up. A `Binding` built by hand -- a
+    /// getter and setter pair, like a controlled input's value and
+    /// onChange in React.
+    private var isShowingScriptPrompt: Binding<Bool> {
+        Binding(get: { model.scriptOpenPrompt != nil }, set: { if !$0 { model.dismissScriptOpenPrompt() } })
+    }
+
+    /// Any file for a catalog (its extension varies); scripts are `.psc`
+    /// text, which the system may not know as a type.
+    private var allowedContentTypes: [UTType] {
+        switch filePick {
+        case .script: return [UTType(filenameExtension: "psc") ?? .plainText, .plainText]
+        case .catalog: return [.item]
         }
     }
 
@@ -243,6 +299,20 @@ struct ContentView: View {
         case .success(let url):
             _ = url.startAccessingSecurityScopedResource()
             model.openCatalog(at: url.path)
+        case .failure(let error):
+            model.reportPickerFailure(error)
+        }
+    }
+}
+
+extension ContentView {
+    /// File > Open Script…'s picker result: opens the script, which may
+    /// ask first (`SampleBuilderModel.openScript`).
+    func handleScriptFileImporterResult(_ result: Result<URL, Error>) {
+        switch result {
+        case .success(let url):
+            _ = url.startAccessingSecurityScopedResource()
+            model.openScript(at: url)
         case .failure(let error):
             model.reportPickerFailure(error)
         }
