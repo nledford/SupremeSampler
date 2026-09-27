@@ -149,6 +149,38 @@ final class ScriptImportTests: XCTestCase {
             SQLPredicateText.render(filter))
     }
 
+    func test_givenEveryPairOfKeywordAnyOfRowsInAGroup_whenSavedThenOpened_thenEachOpensUnchangedWithoutAsking() throws {
+        // Exhaustive over small cases: order, repeats, a subtree twice,
+        // single and multiple picks, each kind of group, nested or not.
+        let pickSets: [Set<String>] = [
+            ["nature"], ["pines"], ["tall-pines"], ["oaks"], ["pines", "oaks"], ["pines", "tall-pines"], ["oaks", "tall-pines"],
+        ]
+        for first in pickSets {
+            for second in pickSets {
+                for match in [GroupMatch.all, .any, .none] {
+                    for nested in [false, true] {
+                        let rows = [first, second].map {
+                            RuleDraft(.keyword(KeywordRuleDraft(operator: .isAnyOf, selectedGUIDs: $0)))
+                        }
+                        let group = RuleGroupDraft(match: match, rules: rows)
+                        let draft = nested
+                            ? RuleGroupDraft(match: .all, rules: [RuleDraft(.rating(RatingRuleDraft())), RuleDraft(.group(group))])
+                            : group
+                        let filter = SampleFilter(root: draft.domainGroup(resolvingCategoriesIn: tree))
+                        let label = "\(first) \(second) \(match) nested: \(nested)"
+
+                        let result = try importing(filter)
+
+                        XCTAssertEqual(
+                            SQLPredicateText.render(SampleFilter(root: result.rules.domainGroup(resolvingCategoriesIn: tree))),
+                            SQLPredicateText.render(filter), label)
+                        XCTAssertFalse(result.needsConfirmation, "\(label): \(result.notices)")
+                    }
+                }
+            }
+        }
+    }
+
     func test_givenRandomRuleBuilderStates_whenSavedThenOpened_thenEachOpensUnchangedWithoutAsking() throws {
         // The whole trip a user makes: rows on screen -> script -> read ->
         // rows again. Anything that asks, or changes the SQL, is a false
@@ -265,5 +297,46 @@ final class ScriptImportNoticeTests: XCTestCase {
 
         XCTAssertEqual(result.missingKeywordCount, 1)
         XCTAssertTrue(result.notices.contains { $0.contains("1 of its keywords isn't") }, "\(result.notices)")
+    }
+}
+
+/// Specifies the alert's own title and message.
+@MainActor
+final class ScriptOpenPromptTextTests: XCTestCase {
+    private let url = URL(fileURLWithPath: "/tmp/Mine.psc")
+
+    private func opening(_ text: String, tree: [CatalogPropNode] = []) throws -> ScriptImport {
+        guard case .read(let script) = ScriptReader.read(text) else { throw XCTSkip("unreadable") }
+        return ScriptImport(url: url, script: script, tree: tree)
+    }
+
+    func test_givenAHandEditedScript_thenTheAlertSaysItWasChangedAndAsksToOpenAnyway() throws {
+        let text = RandomSampleScriptGenerator.generate(sampleSize: 10)
+            .replacingOccurrences(of: "ROWID_MAX_SAMPLE_ATTEMPTS = 8;", with: "ROWID_MAX_SAMPLE_ATTEMPTS = 9;")
+        let prompt = SampleBuilderModel.ScriptOpenPrompt.confirm(try opening(text))
+
+        XCTAssertEqual(prompt.title, "“Mine.psc” was changed outside \(AppName.current)")
+        XCTAssertTrue(prompt.message.hasSuffix("Open its rules anyway? The script file isn't changed until you save."))
+    }
+
+    func test_givenKeywordsThatMovedSinceSaving_thenTheAlertBlamesTheKeywordsNotTheFile() throws {
+        let tree = CatalogPropNode.buildTree(
+            categories: [(guid: "nature", name: "Nature")], props: [(guid: "pines", parentGUID: "nature", name: "Pines")])
+        let filter = SampleFilter(
+            root: RuleGroup(
+                match: .all,
+                rules: [.category(CategoryFilter(branches: [CategoryBranch(rootGUID: "nature", propGUIDs: ["nature"])], mode: .any))]))
+        let result = try opening(RandomSampleScriptGenerator.generate(sampleSize: 10, filter: filter), tree: tree)
+        let prompt = SampleBuilderModel.ScriptOpenPrompt.confirm(result)
+
+        XCTAssertEqual(prompt.title, "“Mine.psc” doesn't match this catalog's keywords")
+        XCTAssertTrue(prompt.message.contains("Keywords have been added, moved or removed"), prompt.message)
+    }
+
+    func test_givenAFileThatCannotOpen_thenTheAlertGivesTheReason() {
+        let prompt = SampleBuilderModel.ScriptOpenPrompt.cannotOpen(fileName: "Notes.psc", reason: "It isn't a text file.")
+
+        XCTAssertEqual(prompt.title, "Can't open “Notes.psc”")
+        XCTAssertEqual(prompt.message, "It isn't a text file.")
     }
 }

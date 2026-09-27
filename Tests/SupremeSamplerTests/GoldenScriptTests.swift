@@ -57,6 +57,43 @@ final class GoldenScriptTests: XCTestCase {
                 .keywordPath(KeywordPathFilter(kind: .startsWith, text: "Nature\\", negated: true)),
             ]))
 
+    /// The operators `everyRule` doesn't use, so every operator's SQL is
+    /// frozen too, not just every field's.
+    static let everyOtherOperator = SampleFilter(
+        root: RuleGroup(
+            match: .all,
+            rules: [
+                .pendingDeletion(true),
+                .rating(.atMost(2)),
+                .rating(.exactly(4)),
+                .keywordCount(.atLeast(2)),
+                .keywordCount(.isNot(3)),
+                .keywordCount(.exactly(1)),
+                .path(PathFilter(kind: .startsWith, text: "/Volumes/Test/", negated: false)),
+                .path(PathFilter(kind: .contains, text: "draft", negated: true)),
+                .path(PathFilter(kind: .startsWith, text: "/tmp/", negated: true)),
+                .path(PathFilter(kind: .endsWith, text: ".jpg", negated: false)),
+                .keywordPath(KeywordPathFilter(kind: .contains, text: "tree", negated: false)),
+                .keywordPath(KeywordPathFilter(kind: .contains, text: "tree", negated: true)),
+                .keywordPath(KeywordPathFilter(kind: .endsWith, text: "\\Oak", negated: false)),
+                .keywordPath(KeywordPathFilter(kind: .endsWith, text: "\\Oak", negated: true)),
+                .keywordPath(KeywordPathFilter(kind: .hasPart, text: "Oak", negated: true)),
+                .keywordPath(KeywordPathFilter(kind: .startsWith, text: "Nature", negated: false)),
+                .keywordPath(KeywordPathFilter(kind: .contains, text: "", negated: false)),
+                .label(LabelFilter(labels: ["Red"], mode: .none)),
+                .label(LabelFilter(labels: [], mode: .any)),
+                .fileType(FileTypeFilter(extensions: ["png", "webp"], mode: .any)),
+                .bookmark(BookmarkFilter(values: [2, 3], mode: .any)),
+                .category(
+                    CategoryFilter(
+                        branches: [
+                            CategoryBranch(rootGUID: "KW-OAKS", propGUIDs: ["KW-OAKS", "KW-RED-OAKS"]),
+                            CategoryBranch(rootGUID: "KW-PINES", propGUIDs: ["KW-PINES"]),
+                        ], mode: .all)),
+                .group(RuleGroup(match: .any, rules: [])),
+                .group(RuleGroup(match: .none, rules: [.rating(.atLeast(5))])),
+            ]))
+
     static let cases = [
         Golden(file: "EveryRuleOff.psc", sampleSize: 2_500, folderBalance: .off, filter: everyRule),
         Golden(file: "EveryRuleBalanced.psc", sampleSize: 1_000, folderBalance: .balanced, filter: everyRule),
@@ -64,6 +101,7 @@ final class GoldenScriptTests: XCTestCase {
             file: "AnyOfRootEqual.psc", sampleSize: 50, folderBalance: .equal,
             filter: SampleFilter(
                 root: RuleGroup(match: .any, rules: [.rating(.exactly(5)), .keywordCount(.isNotEmpty)]))),
+        Golden(file: "EveryOtherOperator.psc", sampleSize: 400, folderBalance: .off, filter: everyOtherOperator),
         // Saved before scripts were stamped with their format.
         Golden(file: "UnstampedUnfiltered.psc", sampleSize: 10_000, folderBalance: .off, filter: SampleFilter()),
     ]

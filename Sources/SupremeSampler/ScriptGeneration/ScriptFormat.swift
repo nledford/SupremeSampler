@@ -59,12 +59,23 @@ enum ScriptFormats {
 
     static func stamp(version: Int) -> String { stampPrefix + String(version) }
 
+    /// The indices of the lines inside the header comment: after the first
+    /// line that is exactly `{`, before the first that is exactly `}`.
+    /// Compared as bytes: a `String` comparison would let `}` plus a
+    /// combining mark, which is a different line to Pascal, count as `}`.
+    static func headerRange(_ lines: [String]) -> Range<Int> {
+        func index(of marker: String, from start: Int) -> Int? {
+            lines[start...].firstIndex { $0.utf8.elementsEqual(marker.utf8) }
+        }
+        guard let open = index(of: "{", from: 0), let close = index(of: "}", from: open + 1) else { return 0..<0 }
+        return (open + 1)..<close
+    }
+
     /// The version a script's header names; 1 for a script saved before
     /// the stamp existed. `nil` for a stamp that isn't exactly
     /// `Script format: <number>`, or more than one stamp.
     static func version(of lines: [String]) -> Int? {
-        let headerEnd = lines.firstIndex(of: "}") ?? 0
-        let stamps = lines[..<headerEnd].filter { $0.hasPrefix(stampPrefix) }
+        let stamps = lines[headerRange(lines)].filter { $0.hasPrefix(stampPrefix) }
         guard let stamp = stamps.first else { return 1 }
         guard stamps.count == 1, let version = Int(stamp.dropFirst(stampPrefix.count)), stamp == self.stamp(version: version)
         else { return nil }
@@ -100,8 +111,19 @@ extension ScriptFormat {
         } else {
             return .failure(notOurs)
         }
-        if let predicate, SQLScanner.nesting(predicate) > SQLPredicateReader.maximumNesting {
-            return .failure(ScriptFormatError(reason: "Its query nests far deeper than Supreme Sampler ever writes."))
+        if let predicate {
+            // Both checks are one pass over the text; reading recurses per
+            // level and rescans at each one.
+            let nesting = SQLScanner.nesting(predicate)
+            if nesting > SQLPredicateReader.maximumNesting {
+                return .failure(
+                    ScriptFormatError(
+                        reason: "Its query nests more than \(SQLPredicateReader.maximumNesting) levels deep, "
+                            + "more than Supreme Sampler reads."))
+            }
+            if predicate.utf8.count * max(nesting, 1) > SQLPredicateReader.maximumWork {
+                return .failure(ScriptFormatError(reason: "Its query is too large for Supreme Sampler to read."))
+            }
         }
         let reading = SQLPredicateReader.read(predicate)
         return .success(
