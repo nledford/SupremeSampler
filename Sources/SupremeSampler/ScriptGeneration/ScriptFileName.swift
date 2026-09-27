@@ -64,8 +64,14 @@ enum ScriptFileName {
         var stem = prefix + body
         // Any spelling: the scripts folder's volume ignores case, so
         // "RandomCATALOGSAMPLE.psc" would be the reference script too.
-        if stem.lowercased() == referenceStem.lowercased() { stem += "Filtered" }
+        if isReferenceName(stem + ".psc") { stem += "Filtered" }
         return stem + ".psc"
+    }
+
+    /// Whether `fileName` is the hand-verified reference script's, in any
+    /// letter case -- the scripts folder's volume ignores case.
+    static func isReferenceName(_ fileName: String) -> Bool {
+        fileName.lowercased() == (referenceStem + ".psc").lowercased()
     }
 
     /// `body` if it's within the soft limit (an "all of" root's own `Etc`

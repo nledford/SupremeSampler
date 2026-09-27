@@ -48,17 +48,25 @@ final class SampleBuilderModel {
     /// Why the last save failed, if it did; cleared by the next success.
     private(set) var saveErrorMessage: String?
 
-    /// What was last written to disk, and from which filter, size and
-    /// folder balance -- kept
-    /// so `lastSavedScriptURL` can tell whether the script on screen
-    /// still matches that file.
-    private struct SavedScript {
+    /// The script file last saved or opened, and the filter, size and
+    /// folder balance it holds -- kept so `lastSavedScriptURL` can tell
+    /// whether the script on screen still matches that file.
+    private struct ScriptFile {
+        enum Origin {
+            case saved
+            case opened
+            /// Opened, but the file has hand edits the rules don't hold.
+            case openedWithEdits
+            /// Opened from an older script format; saving upgrades it.
+            case openedOlderFormat
+        }
         let url: URL
         let filter: SampleFilter
         let sampleSize: Int
         let folderBalance: FolderBalance
+        let origin: Origin
     }
-    private var lastSave: SavedScript?
+    private var lastSave: ScriptFile?
 
     private var catalog: (any SampleBuilderCatalog)?
 
@@ -194,7 +202,7 @@ final class SampleBuilderModel {
     var rules = RuleGroupDraft() {
         didSet {
             guard rules != oldValue else { return }
-            if let undoManager, !isAdoptingSession {
+            if let undoManager, !isAdoptingSession, !isApplyingScript {
                 let isUndoOrRedo = undoManager.isUndoing || undoManager.isRedoing
                 if isUndoOrRedo || textEditingDepth == 0 {
                     registerRulesUndo(restoring: oldValue)
@@ -430,10 +438,10 @@ final class SampleBuilderModel {
         catalog != nil && !isCountingMatches && matchingCount != nil
     }
 
-    /// The file the on-screen script was last saved to -- but only while
-    /// the script still matches it. Derived, not stored: editing a rule
-    /// or the sample size hides it, and undoing the edit brings it back,
-    /// with no bookkeeping to forget.
+    /// The file the on-screen script was last saved to or opened from --
+    /// but only while the script still matches it. Derived, not stored:
+    /// editing a rule or the sample size hides it, and undoing the edit
+    /// brings it back, with no bookkeeping to forget.
     var lastSavedScriptURL: URL? {
         guard let lastSave, lastSave.filter == currentFilter, lastSave.sampleSize == sampleSize,
             lastSave.folderBalance == folderBalance
@@ -446,7 +454,10 @@ final class SampleBuilderModel {
     /// user chose), otherwise one built from the rules (`ScriptFileName`),
     /// with picked keywords named from the open catalog's tree.
     var suggestedScriptFileName: String {
-        if let lastSavedScriptURL { return lastSavedScriptURL.lastPathComponent }
+        // Never the hand-verified reference, even when it was opened.
+        if let lastSavedScriptURL, !ScriptFileName.isReferenceName(lastSavedScriptURL.lastPathComponent) {
+            return lastSavedScriptURL.lastPathComponent
+        }
         let namesByGUID = CatalogPropNode.nameIndex(propTree)
         return ScriptFileName.suggest(
             for: currentFilter, folderBalance: folderBalance, keywordName: { namesByGUID[$0] })
@@ -470,12 +481,137 @@ final class SampleBuilderModel {
         let script = RandomSampleScriptGenerator.generate(sampleSize: size, filter: filter, folderBalance: balance)
         do {
             try PSCFile.encode(script).write(to: destination, options: .atomic)
-            lastSave = SavedScript(url: destination, filter: filter, sampleSize: size, folderBalance: balance)
+            lastSave = ScriptFile(
+                url: destination, filter: filter, sampleSize: size, folderBalance: balance, origin: .saved)
             saveErrorMessage = nil
         } catch {
             lastSave = nil
             saveErrorMessage = "Couldn't save the script: \(error.localizedDescription)"
         }
+    }
+
+    /// What to say about the script file on screen: saved or opened, and
+    /// whether saving would drop hand edits. `nil` once the rules no
+    /// longer match it.
+    var scriptFileStatus: String? {
+        guard let url = lastSavedScriptURL, let lastSave else { return nil }
+        switch lastSave.origin {
+        case .saved: return "Saved \(url.lastPathComponent)"
+        case .opened: return "Opened \(url.lastPathComponent)"
+        case .openedWithEdits: return "Opened \(url.lastPathComponent); saving replaces its hand edits"
+        case .openedOlderFormat: return "Opened \(url.lastPathComponent); saving upgrades its script format"
+        }
+    }
+
+    // MARK: - Opening a saved script
+
+    /// What File > Open Script… needs to ask or tell before (or instead
+    /// of) opening a file.
+    enum ScriptOpenPrompt: Equatable {
+        /// The file won't come back exactly as it is: open it anyway?
+        case confirm(ScriptImport)
+        /// The file can't be opened, and why.
+        case cannotOpen(fileName: String, reason: String)
+    }
+
+    /// Set while a question or explanation about a script file is showing.
+    private(set) var scriptOpenPrompt: ScriptOpenPrompt?
+
+    /// Larger than any script this app writes by far; stops a wrong pick
+    /// (a photo, a catalog) from being read into memory to be diffed.
+    static let maximumScriptSize = 4_000_000
+
+    /// Reads the script at `url` (see `ScriptReader`) and, if it's exactly
+    /// what the app would write for its rules, puts those rules, the
+    /// sample size and folder balance on screen as one undoable step.
+    /// Anything else -- hand edits, rules that couldn't be read, keywords
+    /// the open catalog doesn't have -- sets `scriptOpenPrompt` instead,
+    /// and nothing changes until `confirmScriptOpen`.
+    func openScript(at url: URL) {
+        guard catalogPath != nil else { return }
+        let fileName = url.lastPathComponent
+        let text: String
+        do {
+            let data = try Data(contentsOf: url)
+            guard data.count <= Self.maximumScriptSize else {
+                scriptOpenPrompt = .cannotOpen(fileName: fileName, reason: "It's far larger than a sampling script.")
+                return
+            }
+            // Script Studio may save in the system code page rather than
+            // UTF-8; everything this app writes is ASCII, the same in both.
+            guard let decoded = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .windowsCP1252)
+            else {
+                scriptOpenPrompt = .cannotOpen(fileName: fileName, reason: "It isn't a text file.")
+                return
+            }
+            text = decoded
+        } catch {
+            scriptOpenPrompt = .cannotOpen(fileName: fileName, reason: error.localizedDescription)
+            return
+        }
+
+        switch ScriptReader.read(text) {
+        case .notAScript(let reason):
+            scriptOpenPrompt = .cannotOpen(fileName: fileName, reason: reason)
+        case .read(let script):
+            let opening = ScriptImport(url: url, script: script, tree: propTree)
+            if opening.needsConfirmation {
+                scriptOpenPrompt = .confirm(opening)
+            } else {
+                apply(opening)
+            }
+        }
+    }
+
+    /// Opens the script `scriptOpenPrompt` asked about. For an explanation
+    /// (`cannotOpen`) this just dismisses it.
+    func confirmScriptOpen() {
+        let prompt = scriptOpenPrompt
+        scriptOpenPrompt = nil
+        if case .confirm(let opening) = prompt { apply(opening) }
+    }
+
+    /// Leaves the rules as they are.
+    func dismissScriptOpenPrompt() {
+        scriptOpenPrompt = nil
+    }
+
+    /// Set while an opened script's settings are swapped in, so the rule
+    /// change isn't registered as a "Rule Change" of its own: opening is
+    /// one undo step covering rules, size and balance together.
+    @ObservationIgnored private var isApplyingScript = false
+
+    private struct ScriptSettings {
+        let rules: RuleGroupDraft
+        let sampleSize: Int
+        let folderBalance: FolderBalance
+    }
+
+    private func apply(_ opening: ScriptImport) {
+        restore(
+            ScriptSettings(rules: opening.rules, sampleSize: opening.sampleSize, folderBalance: opening.folderBalance))
+        lastSave = ScriptFile(
+            url: opening.url, filter: currentFilter, sampleSize: sampleSize, folderBalance: folderBalance,
+            origin: opening.needsConfirmation
+                ? .openedWithEdits : opening.script.isOlderFormat ? .openedOlderFormat : .opened)
+    }
+
+    /// Puts `settings` on screen and registers the way back, which
+    /// registers its own way back in turn -- so redo works the same way.
+    private func restore(_ settings: ScriptSettings) {
+        let previous = ScriptSettings(rules: rules, sampleSize: sampleSize, folderBalance: folderBalance)
+        isApplyingScript = true
+        rules = settings.rules
+        sampleSize = settings.sampleSize
+        folderBalance = settings.folderBalance
+        isApplyingScript = false
+        // A text field being edited would otherwise register its edit as
+        // starting from the rules before the open.
+        if textEditingDepth > 0 { rulesBeforeTextEdit = rules }
+        undoManager?.registerUndo(withTarget: self) { model in
+            MainActor.assumeIsolated { model.restore(previous) }
+        }
+        undoManager?.setActionName("Open Script")
     }
 
     /// Surfaces a failure from the system file picker itself (rare --

@@ -136,13 +136,14 @@ struct MatchSummaryView: View {
         }
     }
 
-    /// The last save, while the script still matches it, or why it
-    /// failed. Here rather than in the script pane, which can be hidden.
+    /// The script file last saved or opened, while the script still
+    /// matches it, or why saving failed. Here rather than in the script
+    /// pane, which can be hidden.
     @ViewBuilder
     private var saveStatus: some View {
-        if let url = model.lastSavedScriptURL {
+        if let url = model.lastSavedScriptURL, let status = model.scriptFileStatus {
             HStack(spacing: 6) {
-                Label("Saved \(url.lastPathComponent)", systemImage: "checkmark.circle")
+                Label(status, systemImage: "checkmark.circle")
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.middle)
