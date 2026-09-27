@@ -31,7 +31,14 @@ enum SQLPredicateReader {
         var unreadableClauses: [String]
     }
 
-    /// `nil` (no WHERE clause) is the unfiltered script.
+    /// The deepest parentheses a predicate may nest. The rule builder's
+    /// deepest real trees stay far below it; each level costs the reader
+    /// a pass over the text and a stack frame, so thousands of levels (a
+    /// few kilobytes of hostile or garbled text) would hang, then crash.
+    static let maximumNesting = 128
+
+    /// `nil` (no WHERE clause) is the unfiltered script. Check
+    /// `SQLScanner.nesting` against `maximumNesting` first.
     static func read(_ predicate: String?) -> Reading {
         guard let predicate else { return Reading(filter: SampleFilter(), unreadableClauses: []) }
         var unreadable: [String] = []
@@ -55,6 +62,8 @@ enum SQLPredicateReader {
         return RuleGroup(match: .all, rules: rules(parts, unreadable: &unreadable))
     }
 
+    // `inout` passes a variable for the callee to change in place, like
+    // `&mut Vec<String>` in Rust; the caller writes `&unreadable`.
     private static func rules(_ clauses: [String], unreadable: inout [String]) -> [FilterRule] {
         // `compactMap` drops the `nil`s -- like Rust's `filter_map`.
         clauses.compactMap { clause in
@@ -369,6 +378,26 @@ enum SQLScanner {
         guard depth == 0, !inString else { return nil }
         parts.append(String(current))
         return parts
+    }
+
+    /// How deeply `text`'s parentheses nest, outside string literals. One
+    /// pass, no recursion, so it's safe on any input.
+    static func nesting(_ text: String) -> Int {
+        var depth = 0
+        var deepest = 0
+        var inString = false
+        for char in text {
+            if char == "'" {
+                // `''` inside a literal toggles out and straight back in.
+                inString.toggle()
+            } else if !inString && char == "(" {
+                depth += 1
+                deepest = max(deepest, depth)
+            } else if !inString && char == ")" {
+                depth -= 1
+            }
+        }
+        return deepest
     }
 
     /// The inside of `(...)` when the opening parenthesis is closed by the

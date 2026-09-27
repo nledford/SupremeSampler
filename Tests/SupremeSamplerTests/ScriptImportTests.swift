@@ -108,6 +108,76 @@ final class ScriptImportTests: XCTestCase {
         }
     }
 
+    func test_givenAGroupHoldingOnlyAKeywordAnyOfSeveral_whenImported_thenItStillMatchesAnyOfThem() throws {
+        // `(GUID IN (a, b))` also reads as a one-branch "all of" rule;
+        // splitting that branch into "all of" picks once turned OR into AND.
+        let rules = RuleGroupDraft(
+            match: .all,
+            rules: [
+                RuleDraft(.rating(RatingRuleDraft())),
+                RuleDraft(
+                    .group(
+                        RuleGroupDraft(
+                            match: .any,
+                            rules: [RuleDraft(.keyword(KeywordRuleDraft(operator: .isAnyOf, selectedGUIDs: ["pines", "oaks"])))]))),
+            ])
+        let filter = SampleFilter(root: rules.domainGroup(resolvingCategoriesIn: tree))
+
+        let result = try importing(filter)
+
+        XCTAssertFalse(result.needsConfirmation, "\(result.notices)")
+        XCTAssertEqual(
+            SQLPredicateText.render(SampleFilter(root: result.rules.domainGroup(resolvingCategoriesIn: tree))),
+            SQLPredicateText.render(filter))
+    }
+
+    func test_givenAGroupOfKeywordAnyOfRules_whenImported_thenEachRuleKeepsItsOwnKeywords() throws {
+        let filter = flat(
+            .group(
+                RuleGroup(
+                    match: .all,
+                    rules: [
+                        .category(CategoryFilter(branches: branchesFromPicks(["pines", "oaks"]), mode: .any)),
+                        .category(CategoryFilter(branches: branchesFromPicks(["tall-pines"]), mode: .any)),
+                    ])))
+
+        let result = try importing(filter)
+
+        XCTAssertFalse(result.needsConfirmation, "\(result.notices)")
+        XCTAssertEqual(
+            SQLPredicateText.render(SampleFilter(root: result.rules.domainGroup(resolvingCategoriesIn: tree))),
+            SQLPredicateText.render(filter))
+    }
+
+    func test_givenRandomRuleBuilderStates_whenSavedThenOpened_thenEachOpensUnchangedWithoutAsking() throws {
+        // The whole trip a user makes: rows on screen -> script -> read ->
+        // rows again. Anything that asks, or changes the SQL, is a false
+        // alarm or a silent change of meaning.
+        var rng = RandomRuleTrees.SeededGenerator(state: 20_260_927)
+        let guids = ["nature", "pines", "tall-pines", "oaks", "gone"]
+        for trial in 0..<500 {
+            let draft = RandomRuleTrees.randomDraftGroup(depth: 3, keywordGUIDs: guids, using: &rng)
+            let filter = SampleFilter(root: draft.domainGroup(resolvingCategoriesIn: tree))
+            // "gone" isn't in the tree: counted, and asked about, correctly.
+            let usesMissingKeyword = SQLPredicateText.render(filter)?.contains("'gone'") == true
+
+            let result = try importing(filter)
+
+            XCTAssertEqual(
+                SQLPredicateText.render(SampleFilter(root: result.rules.domainGroup(resolvingCategoriesIn: tree))),
+                SQLPredicateText.render(filter), "trial \(trial)")
+            XCTAssertEqual(result.needsConfirmation, usesMissingKeyword, "trial \(trial): \(result.notices)")
+        }
+    }
+
+    func test_givenMoreThanTheLargestSampleSize_whenImported_thenItAsksAndSaysItWillBeCapped() throws {
+        let result = ScriptImport(url: url, script: try readScript(flat(), size: 5_000_000), tree: tree)
+
+        XCTAssertTrue(result.needsConfirmation)
+        XCTAssertTrue(result.notices.contains { $0.contains("5,000,000") && $0.contains("1,000,000") }, "\(result.notices)")
+        XCTAssertEqual(result.statusNote, "its sample size was capped")
+    }
+
     func test_givenAKeywordNoLongerInTheCatalog_whenImported_thenItIsKeptAndCounted() throws {
         let filter = flat(.category(CategoryFilter(propGUIDs: ["oaks", "gone"], mode: .any)))
 
@@ -129,6 +199,15 @@ final class ScriptImportTests: XCTestCase {
         XCTAssertEqual(keywordRow(result)?.selectedGUIDs, ["pines"])
         XCTAssertTrue(result.keywordsResolveDifferently)
         XCTAssertTrue(result.needsConfirmation)
+        XCTAssertEqual(result.statusNote, "its keyword rules now match different keywords")
+    }
+
+    func test_givenAMissingBranchOfSeveralKeywords_whenImported_thenEachMissingKeywordIsCountedOnce() throws {
+        let filter = flat(
+            .category(CategoryFilter(branches: [CategoryBranch(rootGUID: "gone", propGUIDs: ["gone", "gone-child"])], mode: .any)),
+            .category(CategoryFilter(propGUIDs: ["gone"], mode: .none)))
+
+        XCTAssertEqual(try importing(filter).missingKeywordCount, 2)
     }
 
     // MARK: - Edited scripts
@@ -142,6 +221,11 @@ final class ScriptImportTests: XCTestCase {
 
         XCTAssertTrue(result.needsConfirmation)
         XCTAssertEqual(result.script.unreadableClauses, ["Rating > 3"])
+        XCTAssertEqual(result.statusNote, "saving replaces its hand edits")
+    }
+
+    func test_givenAnUnchangedScript_thenThereIsNothingToNote() throws {
+        XCTAssertNil(try importing(flat(.rating(.atLeast(3)))).statusNote)
     }
 }
 
@@ -180,6 +264,6 @@ final class ScriptImportNoticeTests: XCTestCase {
         }
 
         XCTAssertEqual(result.missingKeywordCount, 1)
-        XCTAssertTrue(result.notices.contains { $0.contains("1 picked keyword") }, "\(result.notices)")
+        XCTAssertTrue(result.notices.contains { $0.contains("1 of its keywords isn't") }, "\(result.notices)")
     }
 }

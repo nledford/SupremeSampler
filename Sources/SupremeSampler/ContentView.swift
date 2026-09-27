@@ -181,7 +181,9 @@ struct ContentView: View {
                 ) { prompt in
                     switch prompt {
                     case .confirm(let opening):
-                        Button(opening.confirmTitle) { model.confirmScriptOpen() }
+                        // The button carries what it confirms: SwiftUI may
+                        // clear the alert's state before running it.
+                        Button(opening.confirmTitle) { model.confirmScriptOpen(opening) }
                         Button("Cancel", role: .cancel) { model.dismissScriptOpenPrompt() }
                     case .cannotOpen:
                         Button("OK", role: .cancel) { model.dismissScriptOpenPrompt() }
@@ -227,7 +229,10 @@ struct ContentView: View {
         }
     }
 
+    /// Shows the Open panel for `kind` -- unless it's already up, when
+    /// changing `filePick` would send the pick to the wrong handler.
     private func pick(_ kind: FilePick) {
+        guard !isPickingFile else { return }
         filePick = kind
         isPickingFile = true
     }

@@ -54,11 +54,9 @@ final class SampleBuilderModel {
     private struct ScriptFile {
         enum Origin {
             case saved
-            case opened
-            /// Opened, but the file has hand edits the rules don't hold.
-            case openedWithEdits
-            /// Opened from an older script format; saving upgrades it.
-            case openedOlderFormat
+            /// `note`: what saving over the file would change, if anything
+            /// (`ScriptImport.statusNote`).
+            case opened(note: String?)
         }
         let url: URL
         let filter: SampleFilter
@@ -105,7 +103,9 @@ final class SampleBuilderModel {
     /// typed `0` or negative value would flow straight into
     /// `SAMPLE_SIZE = ...` and generate a script that silently samples
     /// nothing.
-    static let sampleSizeRange = 1...1_000_000
+    /// `nonisolated`: a constant, safe to read from any thread, so pure
+    /// code off the main actor (`ScriptImport`) can use it too.
+    nonisolated static let sampleSizeRange = 1...1_000_000
 
     /// Bumped every time `sampleSize`'s `didSet` actually clamps a value
     /// (not on every write -- only when the typed value was out of
@@ -316,6 +316,9 @@ final class SampleBuilderModel {
                 }
                 catalog = opened
                 catalogPath = path
+                // A question about a script was checked against the old
+                // catalog's keywords.
+                scriptOpenPrompt = nil
                 catalogStore.savePath(path)
                 adoptSession(for: path)
                 folderCounts = nil
@@ -497,9 +500,7 @@ final class SampleBuilderModel {
         guard let url = lastSavedScriptURL, let lastSave else { return nil }
         switch lastSave.origin {
         case .saved: return "Saved \(url.lastPathComponent)"
-        case .opened: return "Opened \(url.lastPathComponent)"
-        case .openedWithEdits: return "Opened \(url.lastPathComponent); saving replaces its hand edits"
-        case .openedOlderFormat: return "Opened \(url.lastPathComponent); saving upgrades its script format"
+        case .opened(let note): return "Opened \(url.lastPathComponent)" + (note.map { "; " + $0 } ?? "")
         }
     }
 
@@ -517,6 +518,9 @@ final class SampleBuilderModel {
     /// Set while a question or explanation about a script file is showing.
     private(set) var scriptOpenPrompt: ScriptOpenPrompt?
 
+    /// The catalog a pending question's keyword checks were made against.
+    @ObservationIgnored private var promptCatalogPath: String?
+
     /// Larger than any script this app writes by far; stops a wrong pick
     /// (a photo, a catalog) from being read into memory to be diffed.
     static let maximumScriptSize = 4_000_000
@@ -530,17 +534,20 @@ final class SampleBuilderModel {
     func openScript(at url: URL) {
         guard catalogPath != nil else { return }
         let fileName = url.lastPathComponent
+        let tooLarge = ScriptOpenPrompt.cannotOpen(fileName: fileName, reason: "It's far larger than a sampling script.")
         let text: String
         do {
-            let data = try Data(contentsOf: url)
-            guard data.count <= Self.maximumScriptSize else {
-                scriptOpenPrompt = .cannotOpen(fileName: fileName, reason: "It's far larger than a sampling script.")
+            // Checked before reading, so a wrong pick isn't read whole.
+            if let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize, size > Self.maximumScriptSize {
+                scriptOpenPrompt = tooLarge
                 return
             }
-            // Script Studio may save in the system code page rather than
-            // UTF-8; everything this app writes is ASCII, the same in both.
-            guard let decoded = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .windowsCP1252)
-            else {
+            let data = try Data(contentsOf: url)
+            guard data.count <= Self.maximumScriptSize else {
+                scriptOpenPrompt = tooLarge
+                return
+            }
+            guard let decoded = Self.decodeScript(data) else {
                 scriptOpenPrompt = .cannotOpen(fileName: fileName, reason: "It isn't a text file.")
                 return
             }
@@ -557,21 +564,36 @@ final class SampleBuilderModel {
             let opening = ScriptImport(url: url, script: script, tree: propTree)
             if opening.needsConfirmation {
                 scriptOpenPrompt = .confirm(opening)
+                promptCatalogPath = catalogPath
             } else {
                 apply(opening)
             }
         }
     }
 
-    /// Opens the script `scriptOpenPrompt` asked about. For an explanation
-    /// (`cannotOpen`) this just dismisses it.
-    func confirmScriptOpen() {
-        let prompt = scriptOpenPrompt
-        scriptOpenPrompt = nil
-        if case .confirm(let opening) = prompt { apply(opening) }
+    /// A script file's text. UTF-16 when it starts with a UTF-16 byte-order
+    /// mark; otherwise UTF-8, or else the Windows code page Script Studio
+    /// may save in -- everything this app writes is ASCII, the same in both.
+    private static func decodeScript(_ data: Data) -> String? {
+        if data.starts(with: [0xFF, 0xFE]) || data.starts(with: [0xFE, 0xFF]) {
+            return String(data: data, encoding: .utf16)
+        }
+        return String(data: data, encoding: .utf8) ?? String(data: data, encoding: .windowsCP1252)
     }
 
-    /// Leaves the rules as they are.
+    /// Opens `opening`, the script a question asked about -- passed in by
+    /// the alert's button rather than read back from `scriptOpenPrompt`,
+    /// which SwiftUI may already have cleared by then. Ignored if another
+    /// catalog has opened since the question was asked.
+    func confirmScriptOpen(_ opening: ScriptImport) {
+        scriptOpenPrompt = nil
+        guard promptCatalogPath != nil, promptCatalogPath == catalogPath else { return }
+        promptCatalogPath = nil
+        apply(opening)
+    }
+
+    /// Leaves the rules as they are. (The alert's button may still confirm
+    /// afterwards; see `confirmScriptOpen`.)
     func dismissScriptOpenPrompt() {
         scriptOpenPrompt = nil
     }
@@ -581,25 +603,31 @@ final class SampleBuilderModel {
     /// one undo step covering rules, size and balance together.
     @ObservationIgnored private var isApplyingScript = false
 
-    private struct ScriptSettings {
+    /// What opening a script swaps in, and undoing it puts back.
+    private struct AppliedSettings {
         let rules: RuleGroupDraft
         let sampleSize: Int
         let folderBalance: FolderBalance
     }
 
     private func apply(_ opening: ScriptImport) {
-        restore(
-            ScriptSettings(rules: opening.rules, sampleSize: opening.sampleSize, folderBalance: opening.folderBalance))
+        let incoming = AppliedSettings(
+            rules: opening.rules, sampleSize: opening.sampleSize, folderBalance: opening.folderBalance)
+        // Opening what's already on screen (the same file again) would
+        // only renumber the rows -- no undo step for that.
+        let isAlreadyShown =
+            SampleFilter(root: incoming.rules.domainGroup(resolvingCategoriesIn: propTree)) == currentFilter
+            && incoming.sampleSize == sampleSize && incoming.folderBalance == folderBalance
+        if !isAlreadyShown { restore(incoming) }
         lastSave = ScriptFile(
             url: opening.url, filter: currentFilter, sampleSize: sampleSize, folderBalance: folderBalance,
-            origin: opening.needsConfirmation
-                ? .openedWithEdits : opening.script.isOlderFormat ? .openedOlderFormat : .opened)
+            origin: .opened(note: opening.statusNote))
     }
 
     /// Puts `settings` on screen and registers the way back, which
     /// registers its own way back in turn -- so redo works the same way.
-    private func restore(_ settings: ScriptSettings) {
-        let previous = ScriptSettings(rules: rules, sampleSize: sampleSize, folderBalance: folderBalance)
+    private func restore(_ settings: AppliedSettings) {
+        let previous = AppliedSettings(rules: rules, sampleSize: sampleSize, folderBalance: folderBalance)
         isApplyingScript = true
         rules = settings.rules
         sampleSize = settings.sampleSize
