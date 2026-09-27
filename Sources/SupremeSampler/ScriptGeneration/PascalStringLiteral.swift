@@ -17,3 +17,14 @@ enum PascalStringLiteral {
         "'" + text.replacingOccurrences(of: "'", with: "''") + "'"
     }
 }
+
+extension PascalStringLiteral {
+    /// The reverse of `escape`: the text inside a quoted literal, or `nil`
+    /// if `literal` isn't exactly one well-formed literal (unquoted, or a
+    /// lone `'` inside that would have ended it).
+    static func unescape(_ literal: String) -> String? {
+        guard let body = literal.strippingAffixes("'", "'") else { return nil }
+        guard !body.replacingOccurrences(of: "''", with: "").contains("'") else { return nil }
+        return body.replacingOccurrences(of: "''", with: "'")
+    }
+}
