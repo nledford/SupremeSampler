@@ -97,7 +97,7 @@ enum RandomRuleTrees {
             Set((0..<Int.random(in: 0...3, using: &rng)).map { _ in pool.randomElement(using: &rng)! })
         }
         let comparison = NumberComparisonKind.allCases.randomElement(using: &rng)!
-        switch Int.random(in: 0..<(depth > 0 ? 9 : 8), using: &rng) {
+        switch Int.random(in: 0..<(depth > 0 ? 10 : 8), using: &rng) {
         case 0:
             return RuleDraft(.rating(RatingRuleDraft(comparison: comparison, value: Int.random(in: 0...5, using: &rng))))
         case 1:
@@ -121,8 +121,17 @@ enum RandomRuleTrees {
                 .bookmark(BookmarkRuleDraft(mode: [.any, .none].randomElement(using: &rng)!, selectedValues: picks(["0", "2", "5"]))))
         case 7:
             return RuleDraft(.pendingDeletion(PendingDeletionRuleDraft(isPending: Bool.random(using: &rng))))
-        default:
+        case 8:
             return RuleDraft(.group(randomDraftGroup(depth: depth - 1, keywordGUIDs: keywordGUIDs, using: &rng)))
+        default:
+            // A group of nothing but keyword "is any of" rows: its SQL is
+            // also a keyword "is all of" rule's, the case the importer has
+            // to tell apart (it has turned OR into AND, and asked about
+            // rows in unsorted order, before).
+            let rows = (0..<Int.random(in: 1...3, using: &rng)).map { _ in
+                RuleDraft(.keyword(KeywordRuleDraft(operator: .isAnyOf, selectedGUIDs: picks(keywordGUIDs).union([keywordGUIDs.randomElement(using: &rng)!]))))
+            }
+            return RuleDraft(.group(RuleGroupDraft(match: [.all, .any].randomElement(using: &rng)!, rules: rows)))
         }
     }
 }

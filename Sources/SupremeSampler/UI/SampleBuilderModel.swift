@@ -531,33 +531,43 @@ final class SampleBuilderModel {
     /// Anything else -- hand edits, rules that couldn't be read, keywords
     /// the open catalog doesn't have -- sets `scriptOpenPrompt` instead,
     /// and nothing changes until `confirmScriptOpen`.
-    func openScript(at url: URL) {
-        guard catalogPath != nil else { return }
+    ///
+    /// `async`: reading runs off the main actor, like a catalog query, so
+    /// even a large or hostile file can't freeze the window. A second open
+    /// while one is being read is ignored, and a result is dropped if
+    /// another catalog opened meanwhile.
+    func openScript(at url: URL) async {
+        guard let openingCatalog = catalogPath, !isReadingScript else { return }
+        isReadingScript = true
+        defer { isReadingScript = false }
+
         let fileName = url.lastPathComponent
-        let tooLarge = ScriptOpenPrompt.cannotOpen(fileName: fileName, reason: "It's far larger than a sampling script.")
-        let text: String
+        let data: Data
         do {
-            // Checked before reading, so a wrong pick isn't read whole.
-            if let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize, size > Self.maximumScriptSize {
-                scriptOpenPrompt = tooLarge
-                return
-            }
-            let data = try Data(contentsOf: url)
-            guard data.count <= Self.maximumScriptSize else {
-                scriptOpenPrompt = tooLarge
-                return
-            }
-            guard let decoded = Self.decodeScript(data) else {
-                scriptOpenPrompt = .cannotOpen(fileName: fileName, reason: "It isn't a text file.")
-                return
-            }
-            text = decoded
+            // At most one byte past the cap is read, whatever the file (or
+            // the file a link points to) holds.
+            let handle = try FileHandle(forReadingFrom: url)
+            defer { try? handle.close() }
+            data = try handle.read(upToCount: Self.maximumScriptSize + 1) ?? Data()
         } catch {
             scriptOpenPrompt = .cannotOpen(fileName: fileName, reason: error.localizedDescription)
             return
         }
+        guard data.count <= Self.maximumScriptSize else {
+            scriptOpenPrompt = .cannotOpen(fileName: fileName, reason: "It's far larger than a sampling script.")
+            return
+        }
+        guard let text = Self.decodeScript(data) else {
+            scriptOpenPrompt = .cannotOpen(fileName: fileName, reason: "It isn't a text file.")
+            return
+        }
 
-        switch ScriptReader.read(text) {
+        // `Task.detached` runs the closure off the main actor (like
+        // spawning onto a thread pool in Rust); `.value` awaits its result.
+        let reading = await Task.detached(priority: .userInitiated) { ScriptReader.read(text) }.value
+        guard catalogPath == openingCatalog else { return }
+
+        switch reading {
         case .notAScript(let reason):
             scriptOpenPrompt = .cannotOpen(fileName: fileName, reason: reason)
         case .read(let script):
@@ -570,6 +580,9 @@ final class SampleBuilderModel {
             }
         }
     }
+
+    /// Set while `openScript` reads a file.
+    @ObservationIgnored private var isReadingScript = false
 
     /// A script file's text. UTF-16 when it starts with a UTF-16 byte-order
     /// mark; otherwise UTF-8, or else the Windows code page Script Studio

@@ -317,7 +317,7 @@ extension ContentView {
         switch result {
         case .success(let url):
             _ = url.startAccessingSecurityScopedResource()
-            model.openScript(at: url)
+            Task { await model.openScript(at: url) }
         case .failure(let error):
             model.reportPickerFailure(error)
         }

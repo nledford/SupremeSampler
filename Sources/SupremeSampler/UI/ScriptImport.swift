@@ -166,10 +166,16 @@ extension RuleDraft {
             case .none: op = .isNoneOf
             case .all:
                 // `(a AND b)` over keyword lists is also what a group of
-                // "is any of" rows writes (and `(a)` a group of one). A
-                // list that isn't one branch came from such a row: keep
-                // those rows, or "any of a, b" would become "all of".
-                guard picksPerBranch.allSatisfy({ $0.count == 1 }) else {
+                // "is any of" rows writes (and `(a)` a group of one). An
+                // "is all of" row writes one branch per pick, sorted and
+                // without repeats; anything else came from such rows, so
+                // keep them, in their order -- or "any of a, b" becomes
+                // "all of", and rows out of order or repeated would come
+                // back in another order and look changed.
+                let roots = picksPerBranch.compactMap { $0.count == 1 ? $0.first : nil }
+                let isAllOfRow =
+                    roots.count == picksPerBranch.count && roots == roots.sorted() && Set(roots).count == roots.count
+                guard isAllOfRow else {
                     let rows = picksPerBranch.map {
                         RuleDraft(.keyword(KeywordRuleDraft(operator: .isAnyOf, selectedGUIDs: $0)))
                     }

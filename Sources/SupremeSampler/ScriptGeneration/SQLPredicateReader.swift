@@ -37,8 +37,15 @@ enum SQLPredicateReader {
     /// few kilobytes of hostile or garbled text) would hang, then crash.
     static let maximumNesting = 128
 
+    /// The most text x nesting the reader takes on: it rescans a clause
+    /// at every level, so a few hundred KB nested a hundred deep once took
+    /// half a minute. Real predicates are a few KB, and 5,000 keywords in
+    /// one rule is about 60 KB, a few levels deep.
+    static let maximumWork = 10_000_000
+
     /// `nil` (no WHERE clause) is the unfiltered script. Check
-    /// `SQLScanner.nesting` against `maximumNesting` first.
+    /// `SQLScanner.nesting` against `maximumNesting`, and length x nesting
+    /// against `maximumWork`, first (`ScriptFormat.settings` does).
     static func read(_ predicate: String?) -> Reading {
         guard let predicate else { return Reading(filter: SampleFilter(), unreadableClauses: []) }
         var unreadable: [String] = []
